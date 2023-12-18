@@ -98,7 +98,7 @@ Write-Host "Okay, making this server the Domain Controller for $inpDomain `n`n"
 #$inpDomain | Out-File -FilePath $domainFile
 #$Dname = Get-Content -Path $domainFile -Raw
 
-#$Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+$Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
 if ($env:USERDOMAIN -eq $Dname) {
     Write-Host "The server is already a domain controller. Skipping domain setup.`n"
