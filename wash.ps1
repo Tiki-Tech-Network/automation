@@ -94,9 +94,11 @@ if (Get-WindowsFeature -Name AD-Domain-Services | Where-Object { $_.Installed })
 ### check if the server is already a domain controller
 $inpDomain = Read-Host -Prompt "Enter your desired Domain: `n"
 Write-Host "Okay, making this server the Domain Controller for $inpDomain `n`n"
-$domainFile = "C:\Users\Administrator\Documents\domainname.txt"
-$inpDomain | Out-File -FilePath $domainFile
-$Dname = Get-Content -Path $domainFile -Raw
+#$domainFile = "C:\Users\Administrator\Documents\domainname.txt"
+#$inpDomain | Out-File -FilePath $domainFile
+#$Dname = Get-Content -Path $domainFile -Raw
+
+#$Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
 if ($env:USERDOMAIN -eq $Dname) {
     Write-Host "The server is already a domain controller. Skipping domain setup.`n"
