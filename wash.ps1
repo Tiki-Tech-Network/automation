@@ -12,7 +12,23 @@ Write-Host " Windows Auto Server Handling`n`n`n"
                              
 ##################################
 ##################################
-## step 1, update to PS 7.4.0
+## step 0, set this code to automatically run on startup
+
+# Path to your serversetup.ps1 script
+$scriptPath = Join-Path $PSScriptRoot "wash.ps1"
+
+# Path to the Windows Startup folder
+$startupFolder = [System.IO.Path]::Combine($env:APPDATA, 'Microsoft\Windows\Start Menu\Programs\Startup')
+
+# Create a shortcut in the Startup folder
+$shortcutPath = Join-Path $startupFolder "ServerSetup.lnk"
+$WshShell = New-Object -ComObject WScript.Shell
+$shortcut = $WshShell.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = "powershell.exe"
+$shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$scriptPath`""
+$shortcut.Save()
+
+## step 1, update to PS 7.4.0 (win server 2019 normally has 5.1)
 $url1 = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/PowerShell-7.4.0-win-x64.msi"
 $output1 = "C:\Users\Administrator\Downloads\PowershellUpgrade.msi"
 
@@ -31,7 +47,7 @@ if (Test-Path -Path $output1) {
     }
 }
 
-### implement the update
+### implement the update (normally from 5.1)
 $minPSVer = [version]'7.4.0'
 $curPSVer = $PSVersionTable.PSVersion
 
@@ -41,6 +57,10 @@ if ($curPSVer -lt $minPSVer) {
     try {
         Start-Process -Wait -FilePath "msiexec.exe" -ArgumentList "/i $output1 /qn" -ErrorAction Stop
         Write-Host "PowerShell installation successful.`n`n"
+        
+        ### show status
+        $PSVer = $PSVersionTable.PSVersion
+        Write-Host "PowerShell version after update: $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
     }
     catch {
         Write-Host "Error installing PowerShell: $_`n`n"
@@ -48,11 +68,9 @@ if ($curPSVer -lt $minPSVer) {
     }
 } else {
     Write-Host "PowerShell is already up-to-date. Skipping installation.`n"
+    $PSVer = $PSVersionTable.PSVersion
+    Write-Host "Current PowerShell version: $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
 }
-
-### show status
-$PSVer = $PSVersionTable.PSVersion
-Write-Host "PowerShell version after update: $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
 
 
 ##################################
@@ -74,16 +92,20 @@ if (Get-WindowsFeature -Name AD-Domain-Services | Where-Object { $_.Installed })
 ## step 3 become domain controller
 
 ### check if the server is already a domain controller
-if ($env:USERDOMAIN -ne $null) {
+$inpDomain = Read-Host -Prompt "Enter your desired Domain: `n"
+Write-Host "Okay, making this server the Domain Controller for $inpDomain `n`n"
+$domainFile = "C:\Users\Administrator\Documents\domainname.txt"
+$inpDomain | Out-File -FilePath $domainFile
+$Dname = Get-Content -Path $domainFile -Raw
+
+if ($env:USERDOMAIN -eq $Dname) {
     Write-Host "The server is already a domain controller. Skipping domain setup.`n"
 } 
 
 else {
-$inpDomain = Read-Host -Prompt "Enter your desired Domain: `n"
-Write-Host "Okay, making this server the Domain Controller for $inpDomain `n`n"
 
 try {
-    Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDns -ErrorAction Stop
+    Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDns -Force -ErrorAction Stop
     Write-Host "Stood up domain $inpDomain and made this server a Domain Controller`n`n"
 }
 catch {
@@ -92,3 +114,15 @@ catch {
 }
 
 }
+
+########post reboot will be the first time a normal stock windows server 2019 has >PS 5.1
+
+
+
+
+
+
+
+### step x remove the startup shortcut
+
+Remove-Item $shortcutPath -Force
