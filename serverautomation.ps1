@@ -1,0 +1,1 @@
+# this powershell script will be used to stand up a windows server
