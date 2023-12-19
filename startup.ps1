@@ -43,16 +43,16 @@ if (-not (Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
         Log-Message "Shortcut created in the Startup folder."
     } else {
         Log-Message "Shortcut already exists in the Startup folder."
-        break
+        return
     }
 
     # Start the PowerShell script and wait for it to finish
     Start-Process -FilePath "C:\Program Files\PowerShell\7\pwsh.exe" -ArgumentList "-ExecutionPolicy Bypass -File `"$scriptPath`"" -Wait -NoNewWindow
 
     Log-Message "The start-up script has finished running."
-    break
+    return
 
 } else {
     Log-Message "The script is already running. Exiting."
-    break
+    return
 }
