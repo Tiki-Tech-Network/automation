@@ -9,8 +9,20 @@ Write-Host " \ \ /\ / / _ \ \___ \| |_| |"
 Write-Host "  \ V  V / ___ \ ___) |  _  |"
 Write-Host "   \_/\_/_/   \_\____/|_| |_|"
 Write-Host " Windows Auto Server Handling`n`n`n"
+
+Write-Host "Procedurally, this script will set itself to automatically launch on reboot, then optionally download and install a PowerShell update (to 7.4.0 using GitHub). `nNext, it will optionally Active Directory Domain Services, prompt for a domain, and make this device a domain controller within that domain. The script will also prompt to set a static IP in the server software.`nAfter that, it will iteratively prompt the user to create OUs and users."
                              
 ##################################
+
+#Objectives:
+#Fully stand up all requisite services to make the server into a DC
+#Assign the Windows Server VM a static IPv4 address and a DNS
+#Rename the Windows Server VM
+#Installs AD-Domain-Services
+#Create an AD Forest, Organizational Units (OU), and users
+#Configure the server to act as both a DNS server and a Domain Controller.
+#Integrate the new server into the existing network infrastructure.
+
 ##################################
 ## step 0, set this code to automatically run on startup
 
