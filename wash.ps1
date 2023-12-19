@@ -8,24 +8,17 @@ Write-Host "\ \      / / \  / ___|| | | |"
 Write-Host " \ \ /\ / / _ \ \___ \| |_| |"
 Write-Host "  \ V  V / ___ \ ___) |  _  |"
 Write-Host "   \_/\_/_/   \_\____/|_| |_|"
-Write-Host " Windows Auto Server Handling`n`n`n"
+Write-Host " Windows     Automated       `n"
+Write-Host "       Server       Handling`n`n`n"
 
-Write-Host "Procedurally, this script will set itself to automatically launch on reboot, then optionally download and install a PowerShell update (to 7.4.0 using GitHub). `nNext, it will optionally Active Directory Domain Services, prompt for a domain, and make this device a domain controller within that domain. The script will also prompt to set a static IP in the server software.`nAfter that, it will iteratively prompt the user to create OUs and users."
+Start-Sleep -Seconds 1.5
+
                              
 ##################################
 
-#Objectives:
-#Fully stand up all requisite services to make the server into a DC - check
-#Assign the Windows Server VM a static IPv4 address and a DNS - check
-#Rename the Windows Server VM - check
-#Installs AD-Domain-Services - check
-#Create an AD Forest, Organizational Units (OU), and users - check
-#Configure the server to act as both a DNS server and a Domain Controller. - check
-#Integrate the new server into the existing network infrastructure. - check
-
 ##################################
 function Download-Install-PowerShell7.4 {
-    ## Step 1: Update to PowerShell 7.4.0 (Windows Server 2019 normally has 5.1)
+    ## Update to PowerShell 7.4.0 (Windows Server 2019 normally has 5.1.x)
     $url1 = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/PowerShell-7.4.0-win-x64.msi"
     $output1 = "C:\Users\Administrator\Downloads\PowershellUpgrade.msi"
 
@@ -35,6 +28,7 @@ function Download-Install-PowerShell7.4 {
         Write-Host "PowerShell update file already exists. Skipping download.`n`n"
     } else {
         try {
+            Write-Host "A previous download of the PowerShell update was not found. Downloading the file from GitHub.`n"
             Invoke-WebRequest -Uri $url1 -OutFile $output1 -ErrorAction Stop
             Write-Host "Download successful.`n`n"
         }
@@ -50,14 +44,14 @@ function Download-Install-PowerShell7.4 {
 
     # Check if the current PowerShell version is less than 7.4
     if ($curPSVer -lt $minPSVer) {
-        Write-Host "Updating PowerShell.`n"
+        Write-Host "Your PowerShell version is less than 7.4.0 - updating PowerShell.`n"
         try {
             Start-Process -Wait -FilePath "msiexec.exe" -ArgumentList "/i $output1 /qn" -ErrorAction Stop
-            Write-Host "PowerShell installation successful.`n`n"
+            Write-Host "PowerShell installation successful.`nOne note - if you're running this in a 5.1 session, the version won't show as 7.4 but it probably did install.`n"
             
             ### Show status
             $PSVer = $PSVersionTable.PSVersion
-            Write-Host "PowerShell version after update: $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
+            Write-Host "PowerShell version after update (in this session): $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
         }
         catch {
             Write-Host "Error installing PowerShell: $_`n`n"
@@ -66,16 +60,19 @@ function Download-Install-PowerShell7.4 {
     } else {
         Write-Host "PowerShell is already up-to-date. Skipping installation.`n"
         $PSVer = $PSVersionTable.PSVersion
-        Write-Host "Current PowerShell version: $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
+        Write-Host "Current PowerShell version (in this session): $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
     }
 }
 
+##################################
+
 function Install-AD-Domain-Services {
-    ## Step 2: Install AD tools
+    ## Install AD tools
     if (Get-WindowsFeature -Name AD-Domain-Services | Where-Object { $_.Installed }) {
         Write-Host "AD-Domain-Services feature is already installed. Skipping installation.`n"
     } else {
         try {
+            Write-Host "Previous download of ADDS was not found. Downloading..."
             Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -ErrorAction Stop
             Write-Host "Installed AD-Domain-Services.`n"
         }
@@ -86,20 +83,23 @@ function Install-AD-Domain-Services {
     }
 }
 
+##################################
+
 function Create-Domain-Controller {
-    ## Step 3: Become domain controller
+    ## Become domain controller
     ### Check if the server is already a domain controller
-    $inpDomain = Read-Host -Prompt "Enter your desired Domain:`n"
-    Write-Host "Okay, making this server the Domain Controller for $inpDomain`n`n"
 
     $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
     if ($env:USERDOMAIN -eq $Dname) {
-        Write-Host "The server is already a domain controller. Skipping domain setup.`n"
+        Write-Host "The server is already a domain controller for the domain $Dname. Skipping domain setup.`n"
     } else {
         try {
-            Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDns -Force -ErrorAction Stop
-            Write-Host "Stood up domain $inpDomain and made this server a Domain Controller`n`n"
+            # take user input for domain
+            $inpDomain = Read-Host -Prompt "Enter your desired Domain:`n"
+            Write-Host "Okay, making this server the Domain Controller for $inpDomain`n Server will prompt for password and reboot during this process.`n`n"
+
+            Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDNS -Force -ErrorAction Stop
         }
         catch {
             Write-Host "Error with DSForest: $_ `n"
@@ -108,8 +108,10 @@ function Create-Domain-Controller {
     }
 }
 
+##################################
+
 function Provision-ADUser {
-    ######## THE BULK OF THIS SECTION WAS ORIGINALLY WRITTEN IN DECEMBER 2023 BY MARCUS NOGUEIRA, BUT IT HAS BEEN UPDATED TO SUIT MY NEEDS
+    ######## THE BULK OF THIS SECTION WAS ORIGINALLY WRITTEN IN DECEMBER 2023 BY MARCUS NOGUEIRA, BUT IT HAS BEEN UPDATED TO SUIT OUR NEEDS
 
     # Import the Active Directory module
     Import-Module ActiveDirectory
@@ -124,47 +126,75 @@ function Provision-ADUser {
         return $null
     }
 
+    $thisorthat = Read-Host "Press 1 to enter a new AD user and 2 to enter a new OU. Press Q to quit."
+    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
-    do {
-        $firstName = Get-Input -prompt "ENTER FIRST NAME "
-        $lastName = Get-Input -prompt "ENTER LAST NAME "
-        $title = Get-Input -prompt "ENTER TITLE "
-        $department = Get-Input -prompt "ENTER DEPARTMENT "
-        $company = Get-Input -prompt "ENTER COMPANY "
-
-        $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+    if ($thisorthat -eq '1') {
+        do {
+            Write-Host "The following prompts are used to create a user email (first 5 of last name, first 2 of first name).`nIf the department is not found, it will create an AD-OU with that name.`n"
+            $firstName = Get-Input -prompt "ENTER FIRST NAME "
+            $lastName = Get-Input -prompt "ENTER LAST NAME "
+            $title = Get-Input -prompt "ENTER TITLE "
+            $department = Get-Input -prompt "ENTER DEPARTMENT "
+            $company = Get-Input -prompt "ENTER COMPANY "
         
-        # make the email address
-        $emailLastName = $lastName.Substring(0, [Math]::Min(5, $lastName.Length))
-        $emailFirstName = $firstName.Substring(0, [Math]::Min(2, $firstName.Length))
-        $email = "$emailLastName$emailFirstName@$Dname.com"
+            # make the email address
+            $emailLastName = $lastName.Substring(0, [Math]::Min(5, $lastName.Length))
+            $emailFirstName = $firstName.Substring(0, [Math]::Min(2, $firstName.Length))
+            $email = "$emailLastName$emailFirstName@$Dname.com"
         
 
-        # Check for the OU based on the Department
-        $OUPath = "OU=$department,DC=$Dname,DC=com"
-        if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$department'" -ErrorAction SilentlyContinue)) {
-            New-ADOrganizationalUnit -Name $department -Path "DC=$Dname,DC=com"
-        }
+            # Check for the OU based on the Department
+            $OUPath = "OU=$department,DC=$Dname,DC=com"
+            if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$department'" -ErrorAction SilentlyContinue)) {
+                New-ADOrganizationalUnit -Name $department -Path "DC=$Dname,DC=com"
+            }
 
-        # User creation
-        New-ADUser -Name "$firstName $lastName" `
-            -GivenName $firstName `
-            -Surname $lastName `
-            -SamAccountName ($firstName[0] + $lastName).ToLower() `
-            -UserPrincipalName "$email" `
-            -Path $OUPath `
-            -Title $title `
-            -Department $department `
-            -Company $company `
-            -EmailAddress $email `
-            -Enabled $true `
-            -AccountPassword (ConvertTo-SecureString "Tikitech1" -AsPlainText -Force) `
-            -ChangePasswordAtLogon $true
+            # User creation
+            New-ADUser -Name "$firstName $lastName" `
+                -GivenName $firstName `
+                -Surname $lastName `
+                -SamAccountName ($firstName[0] + $lastName).ToLower() `
+                -UserPrincipalName "$email" `
+                -Path $OUPath `
+                -Title $title `
+                -Department $department `
+                -Company $company `
+                -EmailAddress $email `
+                -Enabled $true `
+                -AccountPassword (ConvertTo-SecureString "Tikitech1" -AsPlainText -Force) `
+                -ChangePasswordAtLogon $true
 
-        Write-Host "A user account has been created in the Active Directory for $firstName $lastName with email address $email. Welcome to $company!"
-        $addAnother = Get-Input -prompt "Would you like to add another user? (Y/N)"
-    } while ($addAnother -eq "Y")
+            Write-Host "A user account has been created in the Active Directory for $firstName $lastName with email address $email. Welcome to $company!"
+            $addAnother = Get-Input -prompt "Would you like to add another user? (Y/N)"
+        } while ($addAnother -eq "Y")
+    }
+
+    elseif ($thisorthat -eq '2') {
+        do{
+            $newOU = Read-Host "Enter the name of the Organizational Unit you'd like to create."
+            New-ADOrganizationalUnit -Name $newOU -Path "OU=$newOU,DC=$Dname,DC=com"
+            Write-Host "The OU $newOU has been created.`n"
+            
+            # Get all Organizational Units and select the Name property
+            $ouList = Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+
+            Write-Host "Here is a list of current OUs: $ouList`n`n"
+            $addAnother = Get-Input -prompt "Would you like to add another OU? (Y/N)"
+        } while ($addAnother -eq "Y")
+    }
+
+    elseif ($thisorthat -eq 'Q') {
+        break
+    }
+
+    else {
+        Write-Host "Invalid input."
+        return
+    }
 }
+
+##################################
 
 function Server-Maintenance {
     # Prompt user if they want to rename the server
@@ -182,6 +212,27 @@ function Server-Maintenance {
 
         # Display message about the change taking effect on reboot
         Write-Host "The server name has been changed to $newServerName. The change will take effect on the next reboot.`n"
+
+        $turnoff = Read-Host "Would you like to restart now? y/n"
+        if ($turnoff -eq 'y') {
+            # Prompt the user for a comment
+            $comment = Read-Host "Enter a comment explaining the reason for the server reboot"
+
+            # Display the entered comment
+            Write-Host "You entered: $comment"
+
+            # Restart the computer with the provided comment
+            Restart-Computer -Force -Comment $comment
+        }
+
+        elseif ($turnoff -eq 'n') {
+            break
+        }
+
+        else {
+            Write-Host "Invalid input"
+            return
+        }
     }
 
     elseif ($renameServer -eq "n") {
@@ -208,7 +259,7 @@ function Server-Maintenance {
         }
 
         # Get user input for the default gateway
-        $defaultGateway = Read-Host "Enter your router IP address (default gateway, IPv4)"
+        $defaultGateway = Read-Host "Enter your router IP address (default gateway as IPv4)"
         if (-not ($defaultGateway -as [System.Net.IPAddress])) {
             Write-Host "Invalid gateway IP address format. Please enter a valid IPv4 address.`n"
             return
@@ -281,7 +332,7 @@ while ($true) {
     Write-Host "Q. Quit"
 
     # Get user input
-    $choice = Read-Host "Enter the number or 'Q' to quit"
+    $choice = Read-Host "Enter the 'Q' to quit"
 
     # Process user choice
     switch ($choice) {
