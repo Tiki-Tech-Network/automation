@@ -109,6 +109,8 @@ function Create-Domain-Controller {
 }
 
 function Provision-ADUser {
+    ######## THE BULK OF THIS SECTION WAS ORIGINALLY WRITTEN IN DECEMBER 2023 BY MARCUS NOGUEIRA, BUT IT HAS BEEN UPDATED TO SUIT MY NEEDS
+
     # Import the Active Directory module
     Import-Module ActiveDirectory
 
@@ -274,6 +276,7 @@ while ($true) {
     Write-Host "1. Download and install PowerShell 7.4 update"
     Write-Host "2. Install Active Directory Domain Services"
     Write-Host "3. Promote this server to a Domain Controller"
+    Write-Host "4. Add AD Users or OUs to the Domain"
     Write-Host "5. Server Maintenance - Rename, Static IP, DNS"
     Write-Host "Q. Quit"
 
