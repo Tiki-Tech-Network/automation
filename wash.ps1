@@ -89,6 +89,7 @@ function Create-Domain-Controller {
     ## Become domain controller
     ### Check if the server is already a domain controller
 
+    ## - > out of order or something
     $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
     if ($env:USERDOMAIN -eq $Dname) {
@@ -172,6 +173,8 @@ function Provision-ADUser {
 
     elseif ($thisorthat -eq '2') {
         do{
+
+            ##### ERROR
             $newOU = Read-Host "Enter the name of the Organizational Unit you'd like to create."
             New-ADOrganizationalUnit -Name $newOU -Path "OU=$newOU,DC=$Dname,DC=com"
             Write-Host "The OU $newOU has been created.`n"
@@ -222,7 +225,8 @@ function Server-Maintenance {
             Write-Host "You entered: $comment"
 
             # Restart the computer with the provided comment
-            Restart-Computer -Force -Comment $comment
+            ####### ERROR - word "comment" - maybe fixed
+            shutdown /f /t 0 /r /c "$comment"
         }
 
         elseif ($turnoff -eq 'n') {
@@ -248,9 +252,15 @@ function Server-Maintenance {
     $setStaticIP = Read-Host "Would you like to set a static LAN IP and configure DNS for this server? (Y/N)"
 
     if ($setStaticIP -eq "Y") {
+
+        # Get the active network adapter
+        $networkAdapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+        $interfaceAlias = $networkAdapter.InterfaceAlias
+
         # Get the static IP address from ipconfig
         $ipConfigResult = ipconfig | Select-String -Pattern 'IPv4 Address.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
         $staticIP = $ipConfigResult.Matches.Groups[1].Value
+        Write-Host "Your current IP address (ipconfig) is $staticIP`n"
 
         # Validate if a valid IP address was found
         if (-not ($staticIP -as [System.Net.IPAddress])) {
@@ -258,38 +268,56 @@ function Server-Maintenance {
             return
         }
 
-        # Get user input for the default gateway
-        $defaultGateway = Read-Host "Enter your router IP address (default gateway as IPv4)"
+        # Get default gateway from ipconfig
+        $ipConfigResult = ipconfig | Select-String -Pattern 'Default Gateway.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
+        $defaultGateway = $ipConfigResult.Matches.Groups[1].Value
+        Write-Host "Your current IP address (ipconfig) is $staticIP`n"
+
+        # Validate default gateway
         if (-not ($defaultGateway -as [System.Net.IPAddress])) {
-            Write-Host "Invalid gateway IP address format. Please enter a valid IPv4 address.`n"
+            Write-Host "Unable to retrieve a valid default gateway from ipconfig. Please enter it manually.`n"
             return
         }
+        ####
 
-        # Set static IP address for the server
-        $networkAdapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
-        $interfaceAlias = $networkAdapter.InterfaceAlias
-        New-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway -Type Unicast
+        # Check if the IP address already exists
+        $existingIPAddress = Get-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddressFamily IPv4 | Where-Object { $_.IPAddress -eq $staticIP }
+
+        if ($existingIPAddress) {
+            # If it exists, update the existing IP configuration
+            Set-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway
+            Write-Host "Updated existing IP address configuration to $staticIP."
+        } else {
+            # If it doesn't exist, create a new IP address configuration
+            New-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway -Type Unicast
+            Write-Host "Static IP address set to $staticIP."
+        }
 
         # Display message after the static IP is set
         Write-Host "Static IP address set to $staticIP. Configuring DNS...`n"
 
         # Import the DNS Server module
+        Write-Host "Importing DNS Server Module"
         Import-Module DnsServer
 
         # Define DNS settings
-        $IPAddress = $staticIP  # Replace with the actual IP address of your DNS server
-        $Forwarders = "8.8.8.8", "8.8.4.4"  # Replace with your preferred DNS forwarders
+        $IPAddress = $staticIP
+        $Forwarders = "8.8.8.8", "8.8.4.4"
+        Write-Host "Checking for Windows DNS Management features."
 
         # Configure DNS server settings
         if (-not (Get-WindowsFeature -Name DNS -ErrorAction SilentlyContinue)) {
             # Install DNS server feature
+            Write-Host "Installing Windows DNS Management features."
             Install-WindowsFeature -Name DNS -IncludeManagementTools
         }
 
         # Set the DNS server to listen on all available IP addresses
+        Write-Host "Setting Network Adapter to listen for DNS Lookup on any address."
         Set-DnsServerSetting -InterfaceAlias (Get-NetAdapter).Name -ListenAddresses "Any"
 
         # Set the DNS server address on the network adapter
+        Write-Host "Setting DNS Server on the active network adapter (typically LAN)"
         $NIC = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
         Set-DnsClientServerAddress -InterfaceIndex $NIC.IfIndex -ServerAddresses $IPAddress
 
@@ -299,8 +327,14 @@ function Server-Maintenance {
         # Get the current domain name
         $domain = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).Name
 
-        # Create a forward lookup zone (replace "example.com" with your actual domain)
-        Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns"
+        # Create a forward lookup zone
+        try {
+            Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns" -PassThru -ErrorAction Stop
+            Write-Host "Forward lookup zone created successfully."
+        } catch {
+            Write-Host "Failed to create forward lookup zone. Error: $_"
+        }
+
 
         # Restart DNS service to apply changes
         Restart-Service -Name DNS
