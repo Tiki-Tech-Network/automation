@@ -181,7 +181,7 @@ function Provision-ADUser {
 
             Write-Host "Here is a list of current OUs:"
             Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
-            Write-Host"`n`n"
+            Write-Host "`n`n"
 
             $addAnother = Get-Input -prompt "Would you like to add another OU? (Y/N)"
         } while ($addAnother -eq "Y")
@@ -386,7 +386,7 @@ function Create-Network-Folders {
 
         Write-Host "Here is a list of current OUs:"
         Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
-        Write-Host"`n`n"
+        Write-Host "`n`n"
 
         $ou = Read-Host "Enter an Organizational Unit (OU) that should have access to the folder (leave blank to finish)"
         if (-not [string]::IsNullOrWhiteSpace($ou)) {
