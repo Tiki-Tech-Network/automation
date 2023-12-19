@@ -89,7 +89,7 @@ function Create-Domain-Controller {
     ## Become domain controller
     ### Check if the server is already a domain controller
 
-    ## - > out of order or something
+    Write-Host "If you are not yet a member of a domain (like during initial configuration) then you'll get a red font error right here when the variable you can't see tries to check your current domain. It's no big deal."
     $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
     if ($env:USERDOMAIN -eq $Dname) {
@@ -178,11 +178,11 @@ function Provision-ADUser {
             $newOU = Read-Host "Enter the name of the Organizational Unit you'd like to create."
             New-ADOrganizationalUnit -Name $newOU -Path "OU=$newOU,DC=$Dname,DC=com"
             Write-Host "The OU $newOU has been created.`n"
-            
-            # Get all Organizational Units and select the Name property
-            $ouList = Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
 
-            Write-Host "Here is a list of current OUs: $ouList`n`n"
+            Write-Host "Here is a list of current OUs:"
+            Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+            Write-Host"`n`n"
+
             $addAnother = Get-Input -prompt "Would you like to add another OU? (Y/N)"
         } while ($addAnother -eq "Y")
     }
@@ -355,6 +355,119 @@ function Server-Maintenance {
     }
 }
 
+##################################
+
+function Create-Network-Folders {
+    # Prompt user for folder name
+    $folderName = Read-Host "Enter the name of the shared folder"
+
+    # Validate folder name
+    if (-not $folderName -or $folderName -notmatch '^[a-zA-Z0-9_\-]+$') {
+        Write-Host "Invalid folder name. Please use alphanumeric characters, underscores, or hyphens."
+        return
+    }
+
+    # Construct full paths
+    $folderPath = "C:\SharedFolders\$folderName"
+    $sharePath = "$folderPath\SharedData"
+
+    # Check if folder already exists
+    if (Test-Path $folderPath) {
+        Write-Host "The folder '$folderName' already exists. Aborting."
+        return
+    }
+
+    # Create the folder
+    New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
+
+    # Prompt user for OUs
+    $allowedOUs = @()
+    do {
+
+        Write-Host "Here is a list of current OUs:"
+        Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+        Write-Host"`n`n"
+
+        $ou = Read-Host "Enter an Organizational Unit (OU) that should have access to the folder (leave blank to finish)"
+        if (-not [string]::IsNullOrWhiteSpace($ou)) {
+            $allowedOUs += $ou
+        }
+    } while (-not [string]::IsNullOrWhiteSpace($ou))
+
+    # Share the folder and assign access based on OUs
+    try {
+        New-SmbShare -Name $folderName -Path $sharePath -FullAccess "Everyone" -ErrorAction Stop
+
+        # Add access control based on OUs
+        foreach ($ou in $allowedOUs) {
+            $ouPath = "OU=$ou,DC=YourDomain,DC=com"  # Update with your actual domain components
+            $ouSecurityPrincipal = "NT AUTHORITY\Authenticated Users"
+            $ouPermission = "ReadAndExecute"
+
+            # Grant access to the OU
+            $ouAccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $ouSecurityPrincipal,
+                $ouPermission,
+                "ContainerInherit,ObjectInherit",
+                "None",
+                "Allow"
+            )
+            $ouAcl = Get-Acl $folderPath
+            $ouAcl.AddAccessRule($ouAccessRule)
+            Set-Acl -Path $folderPath -AclObject $ouAcl
+        }
+
+        Write-Host "Shared folder '$folderName' created and shared successfully with access control for selected OUs."
+    }
+    catch {
+        Write-Host "Error sharing folder: $_"
+        Remove-Item -Path $folderPath -Force -ErrorAction SilentlyContinue  # Rollback folder creation on error
+    }
+}
+
+##################################
+
+function Send-IntranetEmail {
+    param(
+        [string]$to,
+        [string]$subject,
+        [string]$body
+    )
+
+    # Get the computer name as the SMTP server
+    $smtpServer = $env:COMPUTERNAME
+
+    # Use the Active Directory user's email address as the sender
+    $smtpFrom = $env:USERDNSDOMAIN  # Assuming the user's email address is correctly populated in Active Directory
+
+    $smtpTo = $to
+
+    # Specify credentials if authentication is required
+    $credentials = Get-Credential  # Modify or omit based on your configuration
+
+    # Specify port (port 25 is the default for unencrypted SMTP)
+    $smtpPort = 25  # Update with the correct port if needed
+
+    $message = @{
+        To         = $smtpTo
+        From       = $smtpFrom
+        Subject    = $subject
+        Body       = $body
+        SmtpServer = $smtpServer
+        Port       = $smtpPort
+        Credential = $credentials  # Omit if not using authentication
+    }
+
+    try {
+        Send-MailMessage @message
+        Write-Host "Email sent successfully to $smtpTo."
+    } catch {
+        Write-Host "Error sending email: $_"
+    }
+}
+
+##################################
+
 # Display the menu
 while ($true) {
     Clear-Host
@@ -364,6 +477,8 @@ while ($true) {
     Write-Host "3. Promote this server to a Domain Controller"
     Write-Host "4. Add AD Users or OUs to the Domain"
     Write-Host "5. Server Maintenance - Rename, Static IP, DNS"
+    Write-Host "6. Create Shared Network Folders"
+    Write-Host "7. Configure Intranet Email Server"
     Write-Host "Q. Quit"
 
     # Get user input
@@ -376,6 +491,8 @@ while ($true) {
         '3' { Create-Domain-Controller; break }
         '4' { Provision-ADUser; break }
         '5' { Server-Maintenance; break }
+        '6' { Create-Network-Folders; break }
+        '7' { Send-IntranetEmail; break }
         'Q' { exit }
         default { Write-Host "Invalid choice. Please try again." }
     }
