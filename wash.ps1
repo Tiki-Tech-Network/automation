@@ -314,7 +314,7 @@ function Server-Maintenance {
 
         # Set the DNS server to listen on all available IP addresses
         Write-Host "Setting Network Adapter to listen for DNS Lookup on any address."
-        Set-DnsServerSetting -InterfaceAlias (Get-NetAdapter).Name -ListenAddresses "Any"
+        Set-DnsServerSetting -IPAddress "Any" -ListenOnAnyAddress $true
 
         # Set the DNS server address on the network adapter
         Write-Host "Setting DNS Server on the active network adapter (typically LAN)"
@@ -322,12 +322,14 @@ function Server-Maintenance {
         Set-DnsClientServerAddress -InterfaceIndex $NIC.IfIndex -ServerAddresses $IPAddress
 
         # Configure DNS forwarders
+        Write-Host "Setting DNS Forwarding to $forwarders"
         Set-DnsServerForwarder -IPAddress $Forwarders
 
         # Get the current domain name
         $domain = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).Name
 
         # Create a forward lookup zone
+        Write-Host "Attempting to create forward lookup zone for $domain on LAN"
         try {
             Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns" -PassThru -ErrorAction Stop
             Write-Host "Forward lookup zone created successfully."
@@ -337,6 +339,7 @@ function Server-Maintenance {
 
 
         # Restart DNS service to apply changes
+        Write-Host "Restarting DNS Service"
         Restart-Service -Name DNS
 
         # Display message after DNS is configured
