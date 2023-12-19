@@ -286,9 +286,6 @@ function Server-Maintenance {
             Install-WindowsFeature -Name DNS -IncludeManagementTools
         }
 
-        # Configure DNS server to use root hints
-        Set-DnsServerRootHint -ServerName localhost
-
         # Set the DNS server to listen on all available IP addresses
         Set-DnsServerSetting -InterfaceAlias (Get-NetAdapter).Name -ListenAddresses "Any"
 
