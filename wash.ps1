@@ -309,10 +309,6 @@ function Server-Maintenance {
             Install-WindowsFeature -Name DNS -IncludeManagementTools
         }
 
-        # Set the DNS server to listen on all available IP addresses
-        Write-Host "Setting Network Adapter to listen for DNS Lookup on any address."
-        Set-DnsServerSetting -ServerListenAddresses @("Any")
-
         # Set the DNS server address on the network adapter
         Write-Host "Setting DNS Server on the active network adapter (typically LAN)"
         $NIC = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
