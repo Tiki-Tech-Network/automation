@@ -8,121 +8,343 @@ Write-Host "\ \      / / \  / ___|| | | |"
 Write-Host " \ \ /\ / / _ \ \___ \| |_| |"
 Write-Host "  \ V  V / ___ \ ___) |  _  |"
 Write-Host "   \_/\_/_/   \_\____/|_| |_|"
-Write-Host " Windows Auto Server Handling`n`n`n"
+Write-Host " Windows     Automated       `n"
+Write-Host "       Server       Handling`n`n`n"
+
+Start-Sleep -Seconds 1.5
+
                              
 ##################################
+
 ##################################
-## step 0, set this code to automatically run on startup
+function Download-Install-PowerShell7.4 {
+    ## Update to PowerShell 7.4.0 (Windows Server 2019 normally has 5.1.x)
+    $url1 = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/PowerShell-7.4.0-win-x64.msi"
+    $output1 = "C:\Users\Administrator\Downloads\PowershellUpgrade.msi"
 
-# Path to your serversetup.ps1 script
-$scriptPath = Join-Path $PSScriptRoot "wash.ps1"
-
-# Path to the Windows Startup folder
-$startupFolder = [System.IO.Path]::Combine($env:APPDATA, 'Microsoft\Windows\Start Menu\Programs\Startup')
-
-# Create a shortcut in the Startup folder
-$shortcutPath = Join-Path $startupFolder "ServerSetup.lnk"
-$WshShell = New-Object -ComObject WScript.Shell
-$shortcut = $WshShell.CreateShortcut($shortcutPath)
-$shortcut.TargetPath = "powershell.exe"
-$shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$scriptPath`""
-$shortcut.Save()
-
-## step 1, update to PS 7.4.0 (win server 2019 normally has 5.1)
-$url1 = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/PowerShell-7.4.0-win-x64.msi"
-$output1 = "C:\Users\Administrator\Downloads\PowershellUpgrade.msi"
-
-### retrieve the update file
-Write-Host "Downloading updated PowerShell file.`n"
-if (Test-Path -Path $output1) {
-    Write-Host "PowerShell update file already exists. Skipping download.`n`n"
-} else {
-    try {
-        Invoke-WebRequest -Uri $url1 -OutFile $output1 -ErrorAction Stop
-        Write-Host "Download successful.`n`n"
+    ### Retrieve the update file
+    Write-Host "Downloading updated PowerShell file.`n"
+    if (Test-Path -Path $output1) {
+        Write-Host "PowerShell update file already exists. Skipping download.`n`n"
+    } else {
+        try {
+            Write-Host "A previous download of the PowerShell update was not found. Downloading the file from GitHub.`n"
+            Invoke-WebRequest -Uri $url1 -OutFile $output1 -ErrorAction Stop
+            Write-Host "Download successful.`n`n"
+        }
+        catch {
+            Write-Host "Error downloading the PowerShell update file: $_`n`n"
+            exit 1
+        }
     }
-    catch {
-        Write-Host "Error downloading the PowerShell update file: $_`n`n"
-        exit 1
-    }
-}
 
-### implement the update (normally from 5.1)
-$minPSVer = [version]'7.4.0'
-$curPSVer = $PSVersionTable.PSVersion
+    ### Implement the update (normally from 5.1)
+    $minPSVer = [version]'7.4.0'
+    $curPSVer = $PSVersionTable.PSVersion
 
-# Check if the current PowerShell version is less than 7.4
-if ($curPSVer -lt $minPSVer) {
-    Write-Host "Updating PowerShell.`n"
-    try {
-        Start-Process -Wait -FilePath "msiexec.exe" -ArgumentList "/i $output1 /qn" -ErrorAction Stop
-        Write-Host "PowerShell installation successful.`n`n"
-        
-        ### show status
+    # Check if the current PowerShell version is less than 7.4
+    if ($curPSVer -lt $minPSVer) {
+        Write-Host "Your PowerShell version is less than 7.4.0 - updating PowerShell.`n"
+        try {
+            Start-Process -Wait -FilePath "msiexec.exe" -ArgumentList "/i $output1 /qn" -ErrorAction Stop
+            Write-Host "PowerShell installation successful.`nOne note - if you're running this in a 5.1 session, the version won't show as 7.4 but it probably did install.`n"
+            
+            ### Show status
+            $PSVer = $PSVersionTable.PSVersion
+            Write-Host "PowerShell version after update (in this session): $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
+        }
+        catch {
+            Write-Host "Error installing PowerShell: $_`n`n"
+            exit 1
+        }
+    } else {
+        Write-Host "PowerShell is already up-to-date. Skipping installation.`n"
         $PSVer = $PSVersionTable.PSVersion
-        Write-Host "PowerShell version after update: $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
-    }
-    catch {
-        Write-Host "Error installing PowerShell: $_`n`n"
-        exit 1
-    }
-} else {
-    Write-Host "PowerShell is already up-to-date. Skipping installation.`n"
-    $PSVer = $PSVersionTable.PSVersion
-    Write-Host "Current PowerShell version: $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
-}
-
-
-##################################
-## step 2 install AD tools
-if (Get-WindowsFeature -Name AD-Domain-Services | Where-Object { $_.Installed }) {
-    Write-Host "AD-Domain-Services feature is already installed. Skipping installation.`n"
-} else {
-    try {
-        Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -ErrorAction Stop
-        Write-Host "Installed AD-Domain-Services.`n"
-    }
-    catch {
-        Write-Host "Error installing Domain Services: $_ `n"
-        exit 1
+        Write-Host "Current PowerShell version (in this session): $($PSVer.Major).$($PSVer.Minor).$($PSVer.Build)`n`n"
     }
 }
 
 ##################################
-## step 3 become domain controller
 
-### check if the server is already a domain controller
-$inpDomain = Read-Host -Prompt "Enter your desired Domain: `n"
-Write-Host "Okay, making this server the Domain Controller for $inpDomain `n`n"
-$domainFile = "C:\Users\Administrator\Documents\domainname.txt"
-$inpDomain | Out-File -FilePath $domainFile
-$Dname = Get-Content -Path $domainFile -Raw
-
-if ($env:USERDOMAIN -eq $Dname) {
-    Write-Host "The server is already a domain controller. Skipping domain setup.`n"
-} 
-
-else {
-
-try {
-    Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDns -Force -ErrorAction Stop
-    Write-Host "Stood up domain $inpDomain and made this server a Domain Controller`n`n"
-}
-catch {
-    Write-Host "Error with DSForest: $_ `n"
-    exit 1
+function Install-AD-Domain-Services {
+    ## Install AD tools
+    if (Get-WindowsFeature -Name AD-Domain-Services | Where-Object { $_.Installed }) {
+        Write-Host "AD-Domain-Services feature is already installed. Skipping installation.`n"
+    } else {
+        try {
+            Write-Host "Previous download of ADDS was not found. Downloading..."
+            Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -ErrorAction Stop
+            Write-Host "Installed AD-Domain-Services.`n"
+        }
+        catch {
+            Write-Host "Error installing Domain Services: $_ `n"
+            exit 1
+        }
+    }
 }
 
+##################################
+
+function Create-Domain-Controller {
+    ## Become domain controller
+    ### Check if the server is already a domain controller
+
+    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+
+    if ($env:USERDOMAIN -eq $Dname) {
+        Write-Host "The server is already a domain controller for the domain $Dname. Skipping domain setup.`n"
+    } else {
+        try {
+            # take user input for domain
+            $inpDomain = Read-Host -Prompt "Enter your desired Domain:`n"
+            Write-Host "Okay, making this server the Domain Controller for $inpDomain`n Server will prompt for password and reboot during this process.`n`n"
+
+            Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDNS -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Host "Error with DSForest: $_ `n"
+            exit 1
+        }
+    }
 }
 
-########post reboot will be the first time a normal stock windows server 2019 has >PS 5.1
+##################################
 
+function Provision-ADUser {
+    ######## THE BULK OF THIS SECTION WAS ORIGINALLY WRITTEN IN DECEMBER 2023 BY MARCUS NOGUEIRA, BUT IT HAS BEEN UPDATED TO SUIT OUR NEEDS
 
+    # Import the Active Directory module
+    Import-Module ActiveDirectory
 
+    # Function accepts a prompt, presents it to the user, checks if the input is empty or not. Returns empty or input. Useful for skipping questions.
+    function Get-Input {
+        param ([string]$prompt)
+        $user_input = Read-Host -Prompt $prompt
+        if (-not [string]::IsNullOrWhiteSpace($user_input)) {
+            return $user_input
+        }
+        return $null
+    }
 
+    $thisorthat = Read-Host "Press 1 to enter a new AD user and 2 to enter a new OU. Press Q to quit."
+    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
+    if ($thisorthat -eq '1') {
+        do {
+            Write-Host "The following prompts are used to create a user email (first 5 of last name, first 2 of first name).`nIf the department is not found, it will create an AD-OU with that name.`n"
+            $firstName = Get-Input -prompt "ENTER FIRST NAME "
+            $lastName = Get-Input -prompt "ENTER LAST NAME "
+            $title = Get-Input -prompt "ENTER TITLE "
+            $department = Get-Input -prompt "ENTER DEPARTMENT "
+            $company = Get-Input -prompt "ENTER COMPANY "
+        
+            # make the email address
+            $emailLastName = $lastName.Substring(0, [Math]::Min(5, $lastName.Length))
+            $emailFirstName = $firstName.Substring(0, [Math]::Min(2, $firstName.Length))
+            $email = "$emailLastName$emailFirstName@$Dname.com"
+        
 
+            # Check for the OU based on the Department
+            $OUPath = "OU=$department,DC=$Dname,DC=com"
+            if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$department'" -ErrorAction SilentlyContinue)) {
+                New-ADOrganizationalUnit -Name $department -Path "DC=$Dname,DC=com"
+            }
 
-### step x remove the startup shortcut
+            # User creation
+            New-ADUser -Name "$firstName $lastName" `
+                -GivenName $firstName `
+                -Surname $lastName `
+                -SamAccountName ($firstName[0] + $lastName).ToLower() `
+                -UserPrincipalName "$email" `
+                -Path $OUPath `
+                -Title $title `
+                -Department $department `
+                -Company $company `
+                -EmailAddress $email `
+                -Enabled $true `
+                -AccountPassword (ConvertTo-SecureString "Tikitech1" -AsPlainText -Force) `
+                -ChangePasswordAtLogon $true
 
-Remove-Item $shortcutPath -Force
+            Write-Host "A user account has been created in the Active Directory for $firstName $lastName with email address $email. Welcome to $company!"
+            $addAnother = Get-Input -prompt "Would you like to add another user? (Y/N)"
+        } while ($addAnother -eq "Y")
+    }
+
+    elseif ($thisorthat -eq '2') {
+        do{
+            $newOU = Read-Host "Enter the name of the Organizational Unit you'd like to create."
+            New-ADOrganizationalUnit -Name $newOU -Path "OU=$newOU,DC=$Dname,DC=com"
+            Write-Host "The OU $newOU has been created.`n"
+            
+            # Get all Organizational Units and select the Name property
+            $ouList = Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+
+            Write-Host "Here is a list of current OUs: $ouList`n`n"
+            $addAnother = Get-Input -prompt "Would you like to add another OU? (Y/N)"
+        } while ($addAnother -eq "Y")
+    }
+
+    elseif ($thisorthat -eq 'Q') {
+        break
+    }
+
+    else {
+        Write-Host "Invalid input."
+        return
+    }
+}
+
+##################################
+
+function Server-Maintenance {
+    # Prompt user if they want to rename the server
+    $renameServer = Read-Host "Would you like to rename the server? (y/n)"
+
+    if ($renameServer -eq "y") {
+        # Get user input for the new server name
+        $newServerName = Read-Host "Enter the new server name"
+
+        # Print user input for confirmation
+        Write-Host "You entered the new server name: $newServerName"
+
+        # Change server name to user input without immediate restart
+        Rename-Computer -NewName $newServerName -Force
+
+        # Display message about the change taking effect on reboot
+        Write-Host "The server name has been changed to $newServerName. The change will take effect on the next reboot.`n"
+
+        $turnoff = Read-Host "Would you like to restart now? y/n"
+        if ($turnoff -eq 'y') {
+            # Prompt the user for a comment
+            $comment = Read-Host "Enter a comment explaining the reason for the server reboot"
+
+            # Display the entered comment
+            Write-Host "You entered: $comment"
+
+            # Restart the computer with the provided comment
+            Restart-Computer -Force -Comment $comment
+        }
+
+        elseif ($turnoff -eq 'n') {
+            break
+        }
+
+        else {
+            Write-Host "Invalid input"
+            return
+        }
+    }
+
+    elseif ($renameServer -eq "n") {
+        Write-Host "Skipping server rename.`n"
+    }
+
+    else {
+        Write-Host "Invalid input. Please enter y or n.`n"
+        return
+    }
+
+    # Prompt user if they want to set a static LAN IP for the server
+    $setStaticIP = Read-Host "Would you like to set a static LAN IP and configure DNS for this server? (Y/N)"
+
+    if ($setStaticIP -eq "Y") {
+        # Get the static IP address from ipconfig
+        $ipConfigResult = ipconfig | Select-String -Pattern 'IPv4 Address.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
+        $staticIP = $ipConfigResult.Matches.Groups[1].Value
+
+        # Validate if a valid IP address was found
+        if (-not ($staticIP -as [System.Net.IPAddress])) {
+            Write-Host "Unable to retrieve a valid static IP address from ipconfig. Please enter it manually.`n"
+            return
+        }
+
+        # Get user input for the default gateway
+        $defaultGateway = Read-Host "Enter your router IP address (default gateway as IPv4)"
+        if (-not ($defaultGateway -as [System.Net.IPAddress])) {
+            Write-Host "Invalid gateway IP address format. Please enter a valid IPv4 address.`n"
+            return
+        }
+
+        # Set static IP address for the server
+        $networkAdapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+        $interfaceAlias = $networkAdapter.InterfaceAlias
+        New-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway -Type Unicast
+
+        # Display message after the static IP is set
+        Write-Host "Static IP address set to $staticIP. Configuring DNS...`n"
+
+        # Import the DNS Server module
+        Import-Module DnsServer
+
+        # Define DNS settings
+        $IPAddress = $staticIP  # Replace with the actual IP address of your DNS server
+        $Forwarders = "8.8.8.8", "8.8.4.4"  # Replace with your preferred DNS forwarders
+
+        # Configure DNS server settings
+        if (-not (Get-WindowsFeature -Name DNS -ErrorAction SilentlyContinue)) {
+            # Install DNS server feature
+            Install-WindowsFeature -Name DNS -IncludeManagementTools
+        }
+
+        # Configure DNS server to use root hints
+        Set-DnsServerRootHint -ServerName localhost
+
+        # Set the DNS server to listen on all available IP addresses
+        Set-DnsServerSetting -InterfaceAlias (Get-NetAdapter).Name -ListenAddresses "Any"
+
+        # Set the DNS server address on the network adapter
+        $NIC = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+        Set-DnsClientServerAddress -InterfaceIndex $NIC.IfIndex -ServerAddresses $IPAddress
+
+        # Configure DNS forwarders
+        Set-DnsServerForwarder -IPAddress $Forwarders
+
+        # Get the current domain name
+        $domain = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).Name
+
+        # Create a forward lookup zone (replace "example.com" with your actual domain)
+        Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns"
+
+        # Restart DNS service to apply changes
+        Restart-Service -Name DNS
+
+        # Display message after DNS is configured
+        Write-Host "DNS configuration completed. Exiting maintenance.`n"
+    }
+    elseif ($setStaticIP -eq "N") {
+        Write-Host "Skipping static IP configuration. Exiting maintenance.`n"
+    }
+    else {
+        Write-Host "Invalid input. Please enter Y or N.`n"
+        return
+    }
+}
+
+# Display the menu
+while ($true) {
+    Clear-Host
+    Write-Host "Select an option:"
+    Write-Host "1. Download and install PowerShell 7.4 update"
+    Write-Host "2. Install Active Directory Domain Services"
+    Write-Host "3. Promote this server to a Domain Controller"
+    Write-Host "4. Add AD Users or OUs to the Domain"
+    Write-Host "5. Server Maintenance - Rename, Static IP, DNS"
+    Write-Host "Q. Quit"
+
+    # Get user input
+    $choice = Read-Host "Enter the 'Q' to quit"
+
+    # Process user choice
+    switch ($choice) {
+        '1' { Download-Install-PowerShell7.4; break }
+        '2' { Install-AD-Domain-Services; break }
+        '3' { Create-Domain-Controller; break }
+        '4' { Provision-ADUser; break }
+        '5' { Server-Maintenance; break }
+        'Q' { exit }
+        default { Write-Host "Invalid choice. Please try again." }
+    }
+
+    # Pause to display the output
+    Read-Host "Press Enter to continue..."
+}
