@@ -379,13 +379,13 @@ function Create-Network-Folders {
     }
 
     # Print list of OUs
-    Write-Host "Here's a list of OUs in this AD:"
+    Write-Host "`n`nHere's a list of OUs in this AD:"
     Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
 
     # Prompt for OU Selection:
     $authorizedOU = Read-Host "Enter one OU name to authorize access to the shared folder (at $folderName)"
 
-    $existOU = Get-ADOrganizationalUnit -Filter {SamAccountName -eq $authorizedOU}
+    $existOU = Get-ADOrganizationalUnit -Filter {Name -eq $authorizedOU}
     if ($existOU -eq $null){
         Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
         return
@@ -394,7 +394,9 @@ function Create-Network-Folders {
     else {
         # show users in OU
         $userList = Get-ADGroupMember -Identity "$authorizedOU" | Select-Object Name | Sort-Object Name
+        Write-Host "You will see a red Windows warning here if there are no AD-Users in your OU. No problem."
         Write-Host "Here is a list of users in your selected OU:`n$userList"
+
     }
     
     # confirm selection
@@ -405,10 +407,10 @@ function Create-Network-Folders {
             $authSG = "SecGroup$authorizedOU"
 
             # check for existence of group
-                $existSG = Get-ADGroup -Filter {SamAccountName -eq $authSG}
+                $existSG = Get-ADGroup -Filter {Name -eq $authSG}
                 if ($existSG -eq $null) {
                     # if it doesn't exist
-                    New-ADGroup -Name "$authSG" -SamAccountName "$authorizedOU" -GroupScope Global -GroupCategory Security 
+                    New-ADGroup -Name "$authSG" -GroupScope Global -GroupCategory Security 
                 }
                 else{
                     # if it does exist
@@ -426,7 +428,7 @@ function Create-Network-Folders {
             try {
                 net share $folderName=$sharePath /GRANT:$authSG,FULL /GRANT:"Domain Admins",FULL
                 Write-Host "Shared folder '$folderName' shared successfully with $authSG."
-                $addAnother = Get-Input -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
+                $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
             }   
 
             catch {
