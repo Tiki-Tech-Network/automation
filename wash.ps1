@@ -381,21 +381,20 @@ function Create-Network-Folders {
     # Print list of OUs
     Write-Host "Here's a list of OUs in this AD:"
     Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
-    Write-Host "`n"
 
     # Prompt for OU Selection:
     $authorizedOU = Read-Host "Enter one OU name to authorize access to the shared folder (at $folderName)"
 
     $existOU = Get-ADOrganizationalUnit -Filter {SamAccountName -eq $authorizedOU}
-    if ($existOU -ne $null){
-        # show users in OU
-        $userList = Get-ADGroupMember -Identity "$authorizedOU" | Select-Object Name | Sort-Object Name
-        Write-Host "Here is a list of users in your selected OU:`n$userList"
+    if ($existOU -eq $null){
+        Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
+        return
     }
 
     else {
-        Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
-        break
+        # show users in OU
+        $userList = Get-ADGroupMember -Identity "$authorizedOU" | Select-Object Name | Sort-Object Name
+        Write-Host "Here is a list of users in your selected OU:`n$userList"
     }
     
     # confirm selection
