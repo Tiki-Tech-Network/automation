@@ -426,7 +426,8 @@ function Create-Network-Folders {
 
             # Share the folder and assign access based on SGs
             try {
-                net share $folderName=$sharePath /GRANT:$authSG,FULL /GRANT:"Domain Admins",FULL
+                net share $folderName=$sharePath /GRANT:$authSG,FULL
+                net share $folderName=$sharePath /GRANT:"Domain Admins",FULL
                 Write-Host "Shared folder '$folderName' shared successfully with $authSG."
                 $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
             }   
