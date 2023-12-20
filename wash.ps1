@@ -371,12 +371,12 @@ function Create-Network-Folders {
     $folderPath = "C:\SharedFolders\$folderName"
     $sharePath = "\\$env:COMPUTERNAME\SharedFolders\$folderName"
     if (Test-Path $folderPath) {
-        Write-Host "The folder '$folderName' already exists. Aborting."
-        return
+        Write-Host "The folder '$folderName' already exists. Proceeding."
     }
-
-    # Create the folder - THIS WORKS
-    New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
+    else {
+        # Create the folder - THIS WORKS
+        New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
+    }
 
     # Print list of OUs
     Write-Host "Here's a list of OUs in this AD:"
@@ -386,7 +386,7 @@ function Create-Network-Folders {
     # Prompt for OU Selection:
     $authorizedOU = Read-Host "Enter one OU name to authorize access to the shared folder (at $folderName)"
 
-    $existOU = Get-ADOrganizationalUnit -Filter {-SamAccountName -eq $authorizedOU}
+    $existOU = Get-ADOrganizationalUnit -Filter {SamAccountName -eq $authorizedOU}
     if ($existOU -ne $null){
         # show users in OU
         $userList = Get-ADGroupMember -Identity "$authorizedOU" | Select-Object Name | Sort-Object Name
