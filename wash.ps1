@@ -358,6 +358,9 @@ function Server-Maintenance {
 
 function Create-Network-Folders {
 
+    #read the domain
+    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+
     # Prompt user for folder name - THIS WORKS
     $folderName = Read-Host "Enter the name of the shared folder"
 
@@ -378,13 +381,14 @@ function Create-Network-Folders {
         New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
     }
 
-    # Print list of OUs
+    # Print list of OUs - THIS WORKS
     Write-Host "`n`nHere's a list of OUs in this AD:"
     Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
 
-    # Prompt for OU Selection:
+    # Prompt for OU Selection: - THIS WORKS
     $authorizedOU = Read-Host "Enter one OU name to authorize access to the shared folder (at $folderName)"
 
+    # THIS WORKS
     $existOU = Get-ADOrganizationalUnit -Filter {Name -eq $authorizedOU}
     if ($existOU -eq $null){
         Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
@@ -392,18 +396,17 @@ function Create-Network-Folders {
     }
 
     else {
-        # show users in OU
-        $userList = Get-ADGroupMember -Identity "$authorizedOU" | Select-Object Name | Sort-Object Name
-        Write-Host "You will see a red Windows warning here if there are no AD-Users in your OU. No problem."
+        # show users in OU - THIS WORKS
+        Write-Host "`nYou will see a red Windows warning here if there are no AD-Users in your OU. No problem.`n"
+        $userList = Get-ADUser -Filter * -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" | Select-Object Name | Sort-Object Name | Formet-List
         Write-Host "Here is a list of users in your selected OU:`n$userList"
 
     }
     
-    # confirm selection
+    # confirm selection - THIS WORKS
     $confirmAuth = Read-Host "Confirm you want $authorizedOU users to have access to $folderName (y/n)"
     if ($confirmAuth -eq 'y') {
         do {
-            ###need to check for existence before making OU
             $authSG = "SecGroup$authorizedOU"
 
             # check for existence of group
@@ -417,19 +420,19 @@ function Create-Network-Folders {
                     Write-Host "Good news, this OU has a Security Group already! Mirroring current OU users to respective SG."
                 }               
 
-            #read the domain
-            $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
-            
             #copy the users and report
             Get-ADUser -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" -Filter * | ForEach-Object {Add-ADGroupMember -Identity "$authSG" -Members $_ }
             Write-Host "Added users from $authorizedOU to $authSG."
 
             # Share the folder and assign access based on SGs
             try {
-                net share $folderName=$sharePath /GRANT:$authSG,FULL
-                net share $folderName=$sharePath /GRANT:"Domain Admins",FULL
+
+                ## COMMA AFTER $AUTHSG MUST ~~MUST~~ BE INSIDE THE QUOTES
+                net share $folderName=$sharePath /GRANT:"$authSG,"FULL
+                net share $folderName=$sharePath /GRANT:"Domain Admins,"FULL
                 Write-Host "Shared folder '$folderName' shared successfully with $authSG."
-                $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
+                # not re-prompting on loop
+                # $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
             }   
 
             catch {
