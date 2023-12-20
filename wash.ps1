@@ -428,9 +428,9 @@ function Create-Network-Folders {
             try {
 
                 ## COMMA AFTER $AUTHSG MUST ~~MUST~~ BE INSIDE THE QUOTES
-                net share $folderName=$sharePath /GRANT:"$authSG,"FULL
-                net share $folderName=$sharePath /GRANT:"Domain Admins,"FULL
-                Write-Host "Shared folder '$folderName' shared successfully with $authSG."
+                Invoke-Expression "net share $folderName=$sharePath /GRANT:`"$authSG`",FULL"
+                Invoke-Expression "net share $folderName=$sharePath /GRANT:`"Domain Admins`",FULL"
+                Write-Host "Shared folder '$folderName' shared successfully with $authSG and Domain Admins."
                 # not re-prompting on loop
                 # $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
             }   
