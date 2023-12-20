@@ -357,44 +357,133 @@ function Server-Maintenance {
 ##################################
 
 function Create-Network-Folders {
-#    # Prompt user for folder name
-#    $folderName = Read-Host "Enter the name of the shared folder"
 
-#    # Validate folder name
-#    if (-not $folderName -or $folderName -notmatch '^[a-zA-Z0-9_\-]+$') {
-#        Write-Host "Invalid folder name. Please use alphanumeric characters, underscores, or hyphens."
-#        return
-#    }
+    # Prompt user for folder name - THIS WORKS
+    $folderName = Read-Host "Enter the name of the shared folder"
 
-#    # Check if folder already exists
-#    $folderPath = "C:\SharedFolders\$folderName"
-#    $sharePath = "\\$env:COMPUTERNAME\SharedFolders\$folderName"
-#    if (Test-Path $folderPath) {
-#        Write-Host "The folder '$folderName' already exists. Aborting."
-#        return
-#    }
+    # Validate folder name - THIS WORKS
+    if (-not $folderName -or $folderName -notmatch '^[a-zA-Z0-9_\-]+$') {
+        Write-Host "Invalid folder name. Please use alphanumeric characters, underscores, or hyphens."
+        return
+    }
 
-#    # Create the folder
-#    New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
+    # Check if folder already exists - THIS WORKS
+    $folderPath = "C:\SharedFolders\$folderName"
+    $sharePath = "\\$env:COMPUTERNAME\SharedFolders\$folderName"
+    if (Test-Path $folderPath) {
+        Write-Host "The folder '$folderName' already exists. Aborting."
+        return
+    }
 
-#    # Share the folder and assign access based on OUs
-#    try {
-#        # Share the folder using net share
-#        net share $folderName=$sharePath /GRANT:Everyone,0 /GRANT:"Domain Admins",READ
+    # Create the folder - THIS WORKS
+    New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
 
-#        # Add access control based on OUs
-#        foreach ($ou in $allowedOUs) {
-#            $domainComponents = (Get-ADDomain).DistinguishedName -split ',' | ForEach-Object { $_ -replace 'DC=' }
-#            $ouPath = "OU=$ou,$domainComponents"
-#            net share $folderName /GRANT:$ouPath,CHANGE
-#        }   
+    # Print list of OUs
+    Write-Host "Here's a list of OUs in this AD:"
+    Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+    Write-Host "`n"
 
-#        Write-Host "Shared folder '$folderName' created and shared successfully with access control for selected OUs."
-#    }  
-#    catch {
-#        Write-Host "Error sharing folder: $_"
-#    }
-#}
+    # Prompt for OU Selection:
+    $authorizedOU = Read-Host "Enter one OU name to authorize access to the shared folder (at $folderName)"
+
+    $existOU = Get-ADOrganizationalUnit -Filter {-SamAccountName -eq $authorizedOU}
+    if ($existOU -ne $null){
+        # show users in OU
+        $userList = Get-ADGroupMember -Identity "$authorizedOU" | Select-Object Name | Sort-Object Name
+        Write-Host "Here is a list of users in your selected OU:`n$userList"
+    }
+
+    else {
+        Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
+        break
+    }
+    
+    # confirm selection
+    $confirmAuth = Read-Host "Confirm you want $authorizedOU users to have access to $folderName (y/n)"
+    if ($confirmAuth -eq 'y') {
+        do {
+            ###need to check for existence before making OU
+            $authSG = "SecGroup$authorizedOU"
+
+            # check for existence of group
+                $existSG = Get-ADGroup -Filter {SamAccountName -eq $authSG}
+                if ($existSG -eq $null) {
+                    # if it doesn't exist
+                    New-ADGroup -Name "$authSG" -SamAccountName "$authorizedOU" -GroupScope Global -GroupCategory Security 
+                }
+                else{
+                    # if it does exist
+                    Write-Host "Good news, this OU has a Security Group already! Mirroring current OU users to respective SG."
+                }               
+
+            #read the domain
+            $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+            
+            #copy the users and report
+            Get-ADUser -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" -Filter * | ForEach-Object {Add-ADGroupMember -Identity "$authSG" -Members $_ }
+            Write-Host "Added users from $authorizedOU to $authSG."
+
+            # Share the folder and assign access based on SGs
+            try {
+                net share $folderName=$sharePath /GRANT:$authSG,FULL /GRANT:"Domain Admins",FULL
+                Write-Host "Shared folder '$folderName' shared successfully with $authSG."
+                $addAnother = Get-Input -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
+            }   
+
+            catch {
+                Write-Host "Error sharing folder: $_"
+                break
+            }
+        } while ($addAnother -eq "Y")
+
+    }
+
+    elseif ($confirmAuth -eq 'n') {
+        break
+    }
+
+    else {
+        Write-Host "Invalid input"
+        return
+    }
+
+}
+
+##################################
+
+function Backup {
+
+    # Define the source directories to back up
+
+    #$sourceDirs = @(
+
+
+    #    "C:\Users\Administrator\FINANCE",
+    #    "C:\Users\Administrator\HR",
+    #    "C:\Users\Administrator\IT",
+    #    "C:\Users\Administrator\Research"
+    #)
+    # Define the root backup directory on the local disk
+    #$backupRootDir = "C:\Backups"
+    # Create a timestamped directory for this backup
+    #$timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    #$backupDir = Join-Path $backupRootDir ("Backup_" + $timestamp)
+    #New-Item -Path $backupDir -ItemType Directory
+    # Copy each source directory to the timestamped backup directory
+    #foreach ($dir in $sourceDirs) {
+    #    if (Test-Path $dir) {
+    #        $folderName = Split-Path $dir -Leaf
+    #        $destPath = Join-Path $backupDir $folderName
+    #        Copy-Item -Path $dir -Destination $destPath -Recurse
+    #        Write-Output "Backed up $folderName to $destPath"
+    #    } else {
+    #        Write-Output "Source directory $dir does not exist."
+    #    }
+    #}
+    #Write-Output "Backup completed to $backupDir"
+
+
+}
 
 ##################################
 
