@@ -432,43 +432,29 @@ function Create-Network-Folders {
 
 ##################################
 
-function Send-IntranetEmail {
-    param(
-        [string]$to,
-        [string]$subject,
-        [string]$body
-    )
+function ConfigureEmail {
 
-    # Get the computer name as the SMTP server
-    $smtpServer = $env:COMPUTERNAME
+    # Install SMTP Server feature
+    Write-Host "Installing Windows Feature SMTP-Server"
+    Install-WindowsFeature -Name SMTP-Server -IncludeManagementTools
 
-    # Use the Active Directory user's email address as the sender
-    $smtpFrom = $env:USERDNSDOMAIN  # Assuming the user's email address is correctly populated in Active Directory
+    # Import the WebAdministration module
+    Write-Host "Importing Module WebAdministration"
+    Import-Module WebAdministration
 
-    $smtpTo = $to
+    # Set the SMTP server configuration
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpMaxMessagesPerConnection" -Value 20
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpMaxMessageSize" -Value 10485760  # 10 MB limit
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpMaxRecipientsPerMessage" -Value 100  
 
-    # Specify credentials if authentication is required
-    $credentials = Get-Credential  # Modify or omit based on your configuration
+    # Disable Anonymous Authentication and enable Windows Authentication
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpAnonymousAuthenticationEnabled" -Value $false
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpWindowsAuthenticationEnabled" -Value $true
 
-    # Specify port (port 25 is the default for unencrypted SMTP)
-    $smtpPort = 25  # Update with the correct port if needed
+    # Restart the SMTP server to apply changes
+    Restart-Service -Name "SimpleMailTransferProtocol"
 
-    $message = @{
-        To         = $smtpTo
-        From       = $smtpFrom
-        Subject    = $subject
-        Body       = $body
-        SmtpServer = $smtpServer
-        Port       = $smtpPort
-        Credential = $credentials  # Omit if not using authentication
-    }
-
-    try {
-        Send-MailMessage @message
-        Write-Host "Email sent successfully to $smtpTo."
-    } catch {
-        Write-Host "Error sending email: $_"
-    }
+    Write-Host "SMTP Server configured successfully."
 }
 
 ##################################
@@ -497,7 +483,7 @@ while ($true) {
         '4' { Provision-ADUser; break }
         '5' { Server-Maintenance; break }
         '6' { Create-Network-Folders; break }
-        '7' { Send-IntranetEmail; break }
+        '7' { ConfigureEmail; break }
         'Q' { exit }
         default { Write-Host "Invalid choice. Please try again." }
     }
