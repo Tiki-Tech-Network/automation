@@ -174,7 +174,6 @@ function Provision-ADUser {
     elseif ($thisorthat -eq '2') {
         do{
 
-            ##### ERROR
             $newOU = Read-Host "Enter the name of the Organizational Unit you'd like to create."
             New-ADOrganizationalUnit -Name $newOU -Path "DC=$Dname,DC=com"
             Write-Host "The OU $newOU has been created.`n"
@@ -396,14 +395,15 @@ function Create-Network-Folders {
 
     # Share the folder and assign access based on OUs
     try {
-        New-SmbShare -Name $folderName -Path $sharePath -FullAccess "Everyone" -ErrorAction Stop
-
+        New-SmbShare -Name $folderName -Path $sharePath -FullAccess "Everyone" -Confirm:$false -ErrorAction Stop
+    
         # Add access control based on OUs
         foreach ($ou in $allowedOUs) {
-            $ouPath = "OU=$ou,DC=YourDomain,DC=com"  # Update with your actual domain components
+            $domainComponents = (Get-ADDomain).DistinguishedName -split ',' | ForEach-Object { $_ -replace 'DC=' }
+            $ouPath = "OU=$ou,$domainComponents"
             $ouSecurityPrincipal = "NT AUTHORITY\Authenticated Users"
             $ouPermission = "ReadAndExecute"
-
+    
             # Grant access to the OU
             $ouAccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
                 $ouSecurityPrincipal,
@@ -416,9 +416,14 @@ function Create-Network-Folders {
             $ouAcl.AddAccessRule($ouAccessRule)
             Set-Acl -Path $folderPath -AclObject $ouAcl
         }
-
+    
         Write-Host "Shared folder '$folderName' created and shared successfully with access control for selected OUs."
     }
+    catch {
+        Write-Host "Error sharing folder: $_"
+        Remove-Item -Path $folderPath -Force -ErrorAction SilentlyContinue  # Rollback folder creation on error
+    }
+    
     catch {
         Write-Host "Error sharing folder: $_"
         Remove-Item -Path $folderPath -Force -ErrorAction SilentlyContinue  # Rollback folder creation on error
