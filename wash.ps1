@@ -402,7 +402,7 @@ function Create-Network-Folders {
     if ($confirmAuth -eq 'y') {
         do {
             ###need to check for existence before making OU
-            $authSG = $authorizedOU"SecGroup"
+            $authSG = "SecGroup$authorizedOU"
 
             # check for existence of group
                 $existSG = Get-ADGroup -Filter {SamAccountName -eq $authSG}
