@@ -124,71 +124,106 @@ In this function, the script first checks for a previous installation of the Win
 
 ##################################
 
-function Create-Domain-Controller {
-    ## Become domain controller
-    ### Check if the server is already a domain controller
+## Create A Domain, Install DNS, Set Domain Controller
 
-    Write-Host "If you are not yet a member of a domain (like during initial configuration) then you'll get a red font error right here when the variable you can't see tries to check your current domain. It's no big deal."
-    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+This function is intended to make a new domain and set this Domain as a Domain Controller - recall the purpose of the script is creation of a new infrastructure. There are plenty of one-liners out there to add a new server to existing infrastructure and promote the server to DC. This ain't that.
 
-    if ($env:USERDOMAIN -eq $Dname) {
-        Write-Host "The server is already a domain controller for the domain $Dname. Skipping domain setup.`n"
-    } else {
-        try {
-            # take user input for domain
-            $inpDomain = Read-Host -Prompt "Enter your desired Domain:`n"
-            Write-Host "Okay, making this server the Domain Controller for $inpDomain`n Server will prompt for password and reboot during this process.`n`n"
+> function Create-Domain-Controller {
 
-            Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDNS -Force -ErrorAction Stop
-        }
-        catch {
-            Write-Host "Error with DSForest: $_ `n"
-            exit 1
+There's a warning here because during the check for "are you already in a Domain?", if you're not, then Windows throws a warning in CLI - but it literally doesn't matter at all because that's the desired outcome.
+
+>    Write-Host "If you are not yet a member of a domain (like during initial configuration) then you'll get a red font error right here when the variable you can't see tries to check your current domain. It's no big deal."
+
+Here I define the name of the directory (just "example" not "example.com") using system variables. Windows won't find it if the server isn't joined to a Domain.
+
+>    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+
+Assuming the Domain is found, 
+>    if ($env:USERDOMAIN -eq $Dname) {
+
+The script will report it is skipping Domain setup.
+
+>    Write-Host "The server is already a domain controller for the domain $Dname. Skipping domain setup.`n"
+
+If not, the script will take user input for a Domain name then launch the ADDS Forest setup - a Windows process, not coded here - to set the server as DC and install DNS. This step can take a while depending on resources available to the server - in VMs, it has averaged 5-15 minutes for me.
+
+    }   else {
+            try {
+                $inpDomain = Read-Host -Prompt "Enter your desired Domain:`n"
+
+                Write-Host "Okay, making this server the Domain Controller for $inpDomain`n Server will prompt for password and reboot during this process.`n`n"
+
+                Install-ADDSForest -DomainName $inpDomain -DomainMode Win2012R2 -ForestMode Win2012R2 -InstallDNS -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Host "Error with DSForest: $_ `n"
+                exit 1
+         }
         }
     }
-}
 
 ##################################
 
-function Provision-ADUser {
-    ######## THE BULK OF THIS SECTION WAS ORIGINALLY WRITTEN IN DECEMBER 2023 BY MARCUS NOGUEIRA, BUT IT HAS BEEN UPDATED TO SUIT OUR NEEDS
+## Provisioning AD-User and AD-OU (interactive)
 
-    # Import the Active Directory module
-    Import-Module ActiveDirectory
+This function exists to populate the AD. Pretty straightforward. About 70% of the original skeleton of this function was written by a colleague, Marcus Nogueira - particularly the `Get-Input` function, which skips input for a blank user 'enter' press.
 
-    # Function accepts a prompt, presents it to the user, checks if the input is empty or not. Returns empty or input. Useful for skipping questions.
-    function Get-Input {
-        param ([string]$prompt)
-        $user_input = Read-Host -Prompt $prompt
-        if (-not [string]::IsNullOrWhiteSpace($user_input)) {
-            return $user_input
-        }
-        return $null
-    }
+Open the function and import the AD module:
 
-    $thisorthat = Read-Host "Press 1 to enter a new AD user and 2 to enter a new OU. Press Q to quit."
-    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+> function Provision-ADUser {
+>
+>    Import-Module ActiveDirectory
 
-    if ($thisorthat -eq '1') {
-        do {
-            Write-Host "The following prompts are used to create a user email (first 5 of last name, first 2 of first name).`nIf the department is not found, it will create an AD-OU with that name.`n"
-            $firstName = Get-Input -prompt "ENTER FIRST NAME "
-            $lastName = Get-Input -prompt "ENTER LAST NAME "
-            $title = Get-Input -prompt "ENTER TITLE "
-            $department = Get-Input -prompt "ENTER DEPARTMENT "
-            $company = Get-Input -prompt "ENTER COMPANY "
+This embedded function accepts a prompt, presents it to the user, checks if the input is empty or not. Returns empty or input. Useful for skipping questions.
+
+>    function Get-Input {
+>    
+> >   param ([string]$prompt)
+>
+> >   $user_input = Read-Host -Prompt $prompt
+>
+>>    if (-not [string]::IsNullOrWhiteSpace($user_input)) {
+>
+>>>  return $user_input
+>
+>>>    }
+>
+>>    return $null
+>
+>    }
+
+Moving into the actual interaction, the script asks whether to make AD-Users (which can also create new OU through the `Department` entry) or OU only, read as $thisorthat.
+
+>    $thisorthat = Read-Host "Press 1 to enter a new AD user and 2 to enter a new OU. Press Q to quit."
+
+Then, the domain name is read again. This is just to make sure we have it correct from Windows in case the tool is being used for ad hoc changes and not during total system configuration.
+
+>    $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
+
+Next, we use the earlier embedded function and iterate through entry of an AD-User's info. The input is all taken as variables first,
+>    if ($thisorthat -eq '1') {
+>>        do {
+>>>            Write-Host "The following prompts are used to create a user email (first 5 of last name, first 2 of first name).`nIf the department is not found, it will create an AD-OU with that name.`n"
+
+>>>            $firstName = Get-Input -prompt "ENTER FIRST NAME "
+>>>            $lastName = Get-Input -prompt "ENTER LAST NAME "
+>>>            $title = Get-Input -prompt "ENTER TITLE "
+>>>            $department = Get-Input -prompt "ENTER DEPARTMENT "
+>>>            $company = Get-Input -prompt "ENTER COMPANY "
+
+Then the input is used to actually create standardized email addresses:        
+>>>            $emailLastName = $lastName.Substring(0, [Math]::Min(5, $lastName.Length))
+>>>            $emailFirstName = $firstName.Substring(0, [Math]::Min(2, $firstName.Length))
+>>>            $email = "$emailLastName$emailFirstName@$Dname.com"
         
-            # make the email address
-            $emailLastName = $lastName.Substring(0, [Math]::Min(5, $lastName.Length))
-            $emailFirstName = $firstName.Substring(0, [Math]::Min(2, $firstName.Length))
-            $email = "$emailLastName$emailFirstName@$Dname.com"
-        
+Next, the `Department` is handled to see whether it exists as an OU or not. If it does exist, nothing happens here; if it does **not** exist, then a new OU with the `Department` name is created.
 
-            # Check for the OU based on the Department
-            $OUPath = "OU=$department,DC=$Dname,DC=com"
-            if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$department'" -ErrorAction SilentlyContinue)) {
-                New-ADOrganizationalUnit -Name $department -Path "DC=$Dname,DC=com"
-            }
+>>>            $OUPath = "OU=$department,DC=$Dname,DC=com"
+>>>            if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$department'" -ErrorAction SilentlyContinue)) {
+>>>>                New-ADOrganizationalUnit -Name $department -Path "DC=$Dname,DC=com"
+>>>            }
+
+Next, the AD-User is actually created using the information taken from the user (you). Note there's a hardcoded temporary password here that must be changed on first login. That's not a best practice, but it was fine in my use case.
 
             # User creation
             New-ADUser -Name "$firstName $lastName" `
@@ -206,9 +241,15 @@ function Provision-ADUser {
                 -ChangePasswordAtLogon $true
 
             Write-Host "A user account has been created in the Active Directory for $firstName $lastName with email address $email. Welcome to $company!"
+
+The script prompts to get user input on whether to create additional users or not. If not, the script exits to the higher menu. If yes, the above is repeated using the below 'while'.
+
             $addAnother = Get-Input -prompt "Would you like to add another user? (Y/N)"
         } while ($addAnother -eq "Y")
     }
+
+If the user selected 2 at the prompt to bypass AD-User creation and just make OUs, this is where it happens. It is really basic - take user input, make the OU, report back, give a list of current OUs, and ask if the user wants to make another OU or not. This will iterate until broken by the user.
+
 
     elseif ($thisorthat -eq '2') {
         do{
@@ -225,9 +266,15 @@ function Provision-ADUser {
         } while ($addAnother -eq "Y")
     }
 
+
+There's also an escape if the user doesn't want to add AD-Users or make new OUs, in case of fat-fingering or changed minds.
+
     elseif ($thisorthat -eq 'Q') {
         break
     }
+
+
+Also error handling.
 
     else {
         Write-Host "Invalid input."
