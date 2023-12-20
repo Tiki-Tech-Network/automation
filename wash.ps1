@@ -176,7 +176,7 @@ function Provision-ADUser {
 
             ##### ERROR
             $newOU = Read-Host "Enter the name of the Organizational Unit you'd like to create."
-            New-ADOrganizationalUnit -Name $newOU -Path "OU=$newOU,DC=$Dname,DC=com"
+            New-ADOrganizationalUnit -Name $newOU -Path "DC=$Dname,DC=com"
             Write-Host "The OU $newOU has been created.`n"
 
             Write-Host "Here is a list of current OUs:"
