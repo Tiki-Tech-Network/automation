@@ -423,11 +423,7 @@ function Create-Network-Folders {
         Write-Host "Error sharing folder: $_"
         Remove-Item -Path $folderPath -Force -ErrorAction SilentlyContinue  # Rollback folder creation on error
     }
-    
-    catch {
-        Write-Host "Error sharing folder: $_"
-        Remove-Item -Path $folderPath -Force -ErrorAction SilentlyContinue  # Rollback folder creation on error
-    }
+
 }
 
 ##################################
