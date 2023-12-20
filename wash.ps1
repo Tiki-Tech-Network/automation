@@ -357,74 +357,44 @@ function Server-Maintenance {
 ##################################
 
 function Create-Network-Folders {
-    # Prompt user for folder name
-    $folderName = Read-Host "Enter the name of the shared folder"
+#    # Prompt user for folder name
+#    $folderName = Read-Host "Enter the name of the shared folder"
 
-    # Validate folder name
-    if (-not $folderName -or $folderName -notmatch '^[a-zA-Z0-9_\-]+$') {
-        Write-Host "Invalid folder name. Please use alphanumeric characters, underscores, or hyphens."
-        return
-    }
+#    # Validate folder name
+#    if (-not $folderName -or $folderName -notmatch '^[a-zA-Z0-9_\-]+$') {
+#        Write-Host "Invalid folder name. Please use alphanumeric characters, underscores, or hyphens."
+#        return
+#    }
 
-    # Construct full paths
-    $folderPath = "C:\SharedFolders\$folderName"
-    $sharePath = "$folderPath\SharedData"
+#    # Check if folder already exists
+#    $folderPath = "C:\SharedFolders\$folderName"
+#    $sharePath = "\\$env:COMPUTERNAME\SharedFolders\$folderName"
+#    if (Test-Path $folderPath) {
+#        Write-Host "The folder '$folderName' already exists. Aborting."
+#        return
+#    }
 
-    # Check if folder already exists
-    if (Test-Path $folderPath) {
-        Write-Host "The folder '$folderName' already exists. Aborting."
-        return
-    }
+#    # Create the folder
+#    New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
 
-    # Create the folder
-    New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
+#    # Share the folder and assign access based on OUs
+#    try {
+#        # Share the folder using net share
+#        net share $folderName=$sharePath /GRANT:Everyone,0 /GRANT:"Domain Admins",READ
 
-    # Prompt user for OUs
-    $allowedOUs = @()
-    do {
+#        # Add access control based on OUs
+#        foreach ($ou in $allowedOUs) {
+#            $domainComponents = (Get-ADDomain).DistinguishedName -split ',' | ForEach-Object { $_ -replace 'DC=' }
+#            $ouPath = "OU=$ou,$domainComponents"
+#            net share $folderName /GRANT:$ouPath,CHANGE
+#        }   
 
-        Write-Host "Here is a list of current OUs:"
-        Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
-        Write-Host "`n`n"
-
-        $ou = Read-Host "Enter an Organizational Unit (OU) that should have access to the folder (leave blank to finish)"
-        if (-not [string]::IsNullOrWhiteSpace($ou)) {
-            $allowedOUs += $ou
-        }
-    } while (-not [string]::IsNullOrWhiteSpace($ou))
-
-    # Share the folder and assign access based on OUs
-    try {
-        New-SmbShare -Name $folderName -Path $sharePath -FullAccess "Everyone" -Confirm:$false -ErrorAction Stop
-    
-        # Add access control based on OUs
-        foreach ($ou in $allowedOUs) {
-            $domainComponents = (Get-ADDomain).DistinguishedName -split ',' | ForEach-Object { $_ -replace 'DC=' }
-            $ouPath = "OU=$ou,$domainComponents"
-            $ouSecurityPrincipal = "NT AUTHORITY\Authenticated Users"
-            $ouPermission = "ReadAndExecute"
-    
-            # Grant access to the OU
-            $ouAccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                $ouSecurityPrincipal,
-                $ouPermission,
-                "ContainerInherit,ObjectInherit",
-                "None",
-                "Allow"
-            )
-            $ouAcl = Get-Acl $folderPath
-            $ouAcl.AddAccessRule($ouAccessRule)
-            Set-Acl -Path $folderPath -AclObject $ouAcl
-        }
-    
-        Write-Host "Shared folder '$folderName' created and shared successfully with access control for selected OUs."
-    }
-    catch {
-        Write-Host "Error sharing folder: $_"
-        Remove-Item -Path $folderPath -Force -ErrorAction SilentlyContinue  # Rollback folder creation on error
-    }
-
-}
+#        Write-Host "Shared folder '$folderName' created and shared successfully with access control for selected OUs."
+#    }  
+#    catch {
+#        Write-Host "Error sharing folder: $_"
+#    }
+#}
 
 ##################################
 
