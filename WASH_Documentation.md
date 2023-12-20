@@ -284,161 +284,164 @@ Also error handling.
 
 ##################################
 
-function Server-Maintenance {
-    # Prompt user if they want to rename the server
-    $renameServer = Read-Host "Would you like to rename the server? (y/n)"
+## Server Maintenance Function
 
-    if ($renameServer -eq "y") {
-        # Get user input for the new server name
-        $newServerName = Read-Host "Enter the new server name"
+This function includes renaming the server, setting of a static IP, and configuring this server as the DNS (since it hosts the Domain).
 
-        # Print user input for confirmation
-        Write-Host "You entered the new server name: $newServerName"
+> function Server-Maintenance {
+>    
+>>    $renameServer = Read-Host "Would you like to rename the server? (y/n)"
 
-        # Change server name to user input without immediate restart
-        Rename-Computer -NewName $newServerName -Force
+>>    if ($renameServer -eq "y") {
 
-        # Display message about the change taking effect on reboot
-        Write-Host "The server name has been changed to $newServerName. The change will take effect on the next reboot.`n"
+This takes user input for the name, prints to screen, and then implements.
+>>        $newServerName = Read-Host "Enter the new server name"
+>>        Write-Host "You entered the new server name: $newServerName"
+>>        Rename-Computer -NewName $newServerName -Force
 
-        $turnoff = Read-Host "Would you like to restart now? y/n"
-        if ($turnoff -eq 'y') {
-            # Prompt the user for a comment
-            $comment = Read-Host "Enter a comment explaining the reason for the server reboot"
+Warn the user that the server needs to restart to change the name, and offers to execute.
+>>        Write-Host "The server name has been changed to $newServerName. The change will take effect on the next reboot.`n"
+>>        $turnoff = Read-Host "Would you like to restart now? y/n"
 
-            # Display the entered comment
-            Write-Host "You entered: $comment"
-
-            # Restart the computer with the provided comment
-            ####### ERROR - word "comment" - maybe fixed
-            shutdown /f /t 0 /r /c "$comment"
-        }
-
-        elseif ($turnoff -eq 'n') {
-            break
-        }
-
-        else {
-            Write-Host "Invalid input"
-            return
-        }
-    }
-
-    elseif ($renameServer -eq "n") {
-        Write-Host "Skipping server rename.`n"
-    }
-
-    else {
-        Write-Host "Invalid input. Please enter y or n.`n"
-        return
-    }
-
-    # Prompt user if they want to set a static LAN IP for the server
-    $setStaticIP = Read-Host "Would you like to set a static LAN IP and configure DNS for this server? (Y/N)"
-
-    if ($setStaticIP -eq "Y") {
-
-        # Get the active network adapter
-        $networkAdapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
-        $interfaceAlias = $networkAdapter.InterfaceAlias
-
-        # Get the static IP address from ipconfig
-        $ipConfigResult = ipconfig | Select-String -Pattern 'IPv4 Address.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
-        $staticIP = $ipConfigResult.Matches.Groups[1].Value
-        Write-Host "Your current IP address (ipconfig) is $staticIP`n"
-
-        # Validate if a valid IP address was found
-        if (-not ($staticIP -as [System.Net.IPAddress])) {
-            Write-Host "Unable to retrieve a valid static IP address from ipconfig. Please enter it manually.`n"
-            return
-        }
-
-        # Get default gateway from ipconfig
-        $ipConfigResult = ipconfig | Select-String -Pattern 'Default Gateway.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
-        $defaultGateway = $ipConfigResult.Matches.Groups[1].Value
-        Write-Host "Your current Gateway address (ipconfig) is $defaultGateway`n"
-
-        # Validate default gateway
-        if (-not ($defaultGateway -as [System.Net.IPAddress])) {
-            Write-Host "Unable to retrieve a valid default gateway from ipconfig. Please enter it manually.`n"
-            return
-        }
-        ####
-
-        # Check if the IP address already exists
-        $existingIPAddress = Get-NetIPAddress -InterfaceAlias $interfaceAlias | Where-Object { $_.IPAddress -eq $staticIP -and $_.AddressFamily -eq 'IPv4' }
-
-        if ($existingIPAddress) {
-            # If it exists, remove the existing IP address
-            Remove-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP
-            Write-Host "Removed existing IP address $staticIP."
-        }
-
-        # Set static IP address for the server
-        New-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway -Type Unicast -AddressFamily IPv4
-        Write-Host "Static IP address set to $staticIP."
-
-        # Import the DNS Server module
-        Write-Host "Importing DNS Server Module"
-        Import-Module DnsServer
-
-        # Define DNS settings
-        $IPAddress = $staticIP
-        $Forwarders = "8.8.8.8", "8.8.4.4"
-        Write-Host "Checking for Windows DNS Management features."
-
-        # Configure DNS server settings
-        if (-not (Get-WindowsFeature -Name DNS -ErrorAction SilentlyContinue)) {
-            # Install DNS server feature
-            Write-Host "Installing Windows DNS Management features."
-            Install-WindowsFeature -Name DNS -IncludeManagementTools
-        }
-
-        # Set the DNS server address on the network adapter
-        Write-Host "Setting DNS Server on the active network adapter (typically LAN)"
-        $NIC = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
-        Set-DnsClientServerAddress -InterfaceIndex $NIC.IfIndex -ServerAddresses $IPAddress
-
-        # Configure DNS forwarders
-        Write-Host "Setting DNS Forwarding to $forwarders"
-        Set-DnsServerForwarder -IPAddress $Forwarders
-
-        # Get the current domain name
-        $domain = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).Name
-
-        # Check if the DNS zone already exists
-        $zoneExists = Get-DnsServerZone -Name $domain -ErrorAction SilentlyContinue
-
-        if ($zoneExists) {
-            Write-Host "DNS zone for $domain already exists. Skipping creation."
-        } else {
-            # Create a forward lookup zone
-            Write-Host "Attempting to create forward lookup zone for $domain on LAN"
-            try {
-                Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns" -PassThru -ErrorAction Stop
-                Write-Host "Forward lookup zone created successfully."
-            } catch {
-                Write-Host "Failed to create forward lookup zone. Error: $_"
-            }
-        }
+If the user is ready to restart (best choice), then it prompts for a comment and executes here:
+>>        if ($turnoff -eq 'y') {
+>>>            $comment = Read-Host "Enter a comment explaining the reason for the server reboot"
+>>>            Write-Host "You entered: $comment"
+>>>            shutdown /f /t 0 /r /c "$comment"
+>>        }
 
 
+If the user is not ready to reboot (worst choice), then the Server Rename segment breaks.
 
-        # Restart DNS service to apply changes
-        Write-Host "Restarting DNS Service"
-        Restart-Service -Name DNS
+>        elseif ($turnoff -eq 'n') {
+>            break
+>        }
 
-        # Display message after DNS is configured
-        Write-Host "DNS configuration completed. Exiting maintenance.`n"
-    }
-    elseif ($setStaticIP -eq "N") {
-        Write-Host "Skipping static IP configuration. Exiting maintenance.`n"
-    }
-    else {
-        Write-Host "Invalid input. Please enter Y or N.`n"
-        return
-    }
-}
+Input checking.
+>        else {
+>            Write-Host "Invalid input"
+>            return
+>        }
+>    }
+
+If the user skips renaming the server:
+>    elseif ($renameServer -eq "n") {
+>        Write-Host "Skipping server rename.`n"
+>    }
+
+Input checking.
+>    else {
+>        Write-Host "Invalid input. Please enter y or n.`n"
+>        return
+>    }
+
+Prompt user if they want to set a static LAN IP for the server on the server's adapter. Must also be configured (separately) as a reserved IP on the router, as appropriate.
+>    $setStaticIP = Read-Host "Would you like to set a static LAN IP and configure DNS for this server? (Y/N)"
+
+If yes:
+>    if ($setStaticIP -eq "Y") {
+
+Get the active network adapter:
+>>        $networkAdapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+>>        $interfaceAlias = $networkAdapter.InterfaceAlias
+
+Get the static IP address from `ipconfig` and print to screen.
+>>        $ipConfigResult = ipconfig | Select-String -Pattern 'IPv4 Address.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
+>>        $staticIP = $ipConfigResult.Matches.Groups[1].Value
+>>        Write-Host "Your current IP address (ipconfig) is $staticIP`n"
+
+Validate if a valid IP address was found and if not, prompt for user input. Useful if the server is not connected to the network yet but perhaps less common.
+>>        if (-not ($staticIP -as [System.Net.IPAddress])) {
+>>>            Write-Host "Unable to retrieve a valid static IP address from ipconfig. Please enter it manually.`n"
+>>>            return
+>>        }
+
+Get default gateway from `ipconfig` - normally a router - and print to screen.
+>>        $ipConfigResult = ipconfig | Select-String -Pattern 'Default Gateway.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
+>>        $defaultGateway = $ipConfigResult.Matches.Groups[1].Value
+>>        Write-Host "Your current Gateway address (ipconfig) is $defaultGateway`n"
+
+Validate default gateway ip address, and if not valid, prompt for user input.
+>>        if (-not ($defaultGateway -as [System.Net.IPAddress])) {
+>>>            Write-Host "Unable to retrieve a valid default gateway from ipconfig. Please enter it manually.`n"
+>>>            return
+>>        }
+
+Check if the IP address already exists, or said another way, see if the IP address is already configured on the server's NIC (it normally is if the `ipconfig` was able to read it).
+>>        $existingIPAddress = Get-NetIPAddress -InterfaceAlias $interfaceAlias | Where-Object { $_.IPAddress -eq $staticIP -and $_.AddressFamily -eq 'IPv4' }
+
+If the IP address exists, delete from the NIC so we can re-apply it cleanly in the next step. All the same settings are applied because everything is saved as variables; unless the user had to input the new IP address because something was wrong with the previous configuration.
+>>        if ($existingIPAddress) {
+>>>            Remove-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP
+>>>            Write-Host "Removed existing IP address $staticIP."
+>>        }
+
+>>        New-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway -Type Unicast -AddressFamily IPv4
+>>        Write-Host "Static IP address set to $staticIP."
+
+Next, moves to DNS setup.
+>        Write-Host "Importing DNS Server Module"
+>        Import-Module DnsServer
+
+Define DNS settings. I left Google remote DNS as the forward but this could be hardcoded elsewhere, like 1.1.1.1 for CloudFlare, or changed to take user input as appropriate.
+>        $IPAddress = $staticIP
+>        $Forwarders = "8.8.8.8", "8.8.4.4"
+
+Checks for previous installation of DNS - might exist depending on what has been done so far and if it does, the check saves time.
+>        Write-Host "Checking for Windows DNS Management features."
+
+If it isn't found, then this installs the WindowsFeatures.
+>        if (-not (Get-WindowsFeature -Name DNS -ErrorAction SilentlyContinue)) {
+>>            Write-Host "Installing Windows DNS Management features."
+>>            Install-WindowsFeature -Name DNS -IncludeManagementTools
+>>        }
+>>        Write-Host "Setting DNS Server on the active network adapter (typically LAN)"
+
+Also sets the NIC to be the DNS Server address (seems obvious?) - in my use case this is also configured in the router GUI.
+>>        $NIC = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+>>        Set-DnsClientServerAddress -InterfaceIndex $NIC.IfIndex -ServerAddresses $IPAddress
+
+This is where the server sends DNS requests to google or wherever is hardcoded.
+>        Write-Host "Setting DNS Forwarding to $forwarders"
+>        Set-DnsServerForwarder -IPAddress $Forwarders
+
+This section leads into DNS Forward Zone creation to help devices find the Domain we're working in. 
+
+First, pulls the domain name from the Windows variables
+>        $domain = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).Name
+
+Then checks whether the Lookup Zone already exists (won't exist in initial config, but might in later maintenance).
+>        $zoneExists = Get-DnsServerZone -Name $domain -ErrorAction SilentlyContinue
+
+If the zone exists, skips, and if not, try-catch to make the zone.
+>        if ($zoneExists) {
+>>            Write-Host "DNS zone for $domain already exists. Skipping creation."
+>        } else {
+>>            Write-Host "Attempting to create forward lookup zone for $domain on LAN"
+>>            try {
+>>>                Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns" -PassThru -ErrorAction Stop
+>>>                Write-Host "Forward lookup zone created successfully."
+>>            } catch {
+>>>                Write-Host "Failed to create forward lookup zone. Error: $_"
+>>            }
+>        }
+
+Then restart the DNS service and report success; break the section.
+>>        Write-Host "Restarting DNS Service"
+>>        Restart-Service -Name DNS
+>>        Write-Host "DNS configuration completed. Exiting maintenance.`n"
+>    }
+
+Back to static IP - if there's user input to skip static IP config, then IP and DNS are both skipped.
+>    elseif ($setStaticIP -eq "N") {
+>>        Write-Host "Skipping static IP configuration. Exiting maintenance.`n"
+>    }
+>    else {
+>>        Write-Host "Invalid input. Please enter Y or N.`n"
+>>        return
+>    }
+>
+> }
 
 ##################################
 
