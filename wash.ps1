@@ -89,7 +89,7 @@ function Create-Domain-Controller {
     ## Become domain controller
     ### Check if the server is already a domain controller
 
-    ## - > out of order or something
+    Write-Host "If you are not yet a member of a domain (like during initial configuration) then you'll get a red font error right here when the variable you can't see tries to check your current domain. It's no big deal."
     $Dname = ([System.DirectoryServices.ActiveDirectory.Domain]::GetComputerDomain().Name -split '\.')[0]
 
     if ($env:USERDOMAIN -eq $Dname) {
@@ -174,15 +174,14 @@ function Provision-ADUser {
     elseif ($thisorthat -eq '2') {
         do{
 
-            ##### ERROR
             $newOU = Read-Host "Enter the name of the Organizational Unit you'd like to create."
-            New-ADOrganizationalUnit -Name $newOU -Path "OU=$newOU,DC=$Dname,DC=com"
+            New-ADOrganizationalUnit -Name $newOU -Path "DC=$Dname,DC=com"
             Write-Host "The OU $newOU has been created.`n"
-            
-            # Get all Organizational Units and select the Name property
-            $ouList = Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
 
-            Write-Host "Here is a list of current OUs: $ouList`n`n"
+            Write-Host "Here is a list of current OUs:"
+            Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+            Write-Host "`n`n"
+
             $addAnother = Get-Input -prompt "Would you like to add another OU? (Y/N)"
         } while ($addAnother -eq "Y")
     }
@@ -271,7 +270,7 @@ function Server-Maintenance {
         # Get default gateway from ipconfig
         $ipConfigResult = ipconfig | Select-String -Pattern 'Default Gateway.*: (\d+\.\d+\.\d+\.\d+)' -AllMatches
         $defaultGateway = $ipConfigResult.Matches.Groups[1].Value
-        Write-Host "Your current IP address (ipconfig) is $staticIP`n"
+        Write-Host "Your current Gateway address (ipconfig) is $defaultGateway`n"
 
         # Validate default gateway
         if (-not ($defaultGateway -as [System.Net.IPAddress])) {
@@ -281,20 +280,17 @@ function Server-Maintenance {
         ####
 
         # Check if the IP address already exists
-        $existingIPAddress = Get-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddressFamily IPv4 | Where-Object { $_.IPAddress -eq $staticIP }
+        $existingIPAddress = Get-NetIPAddress -InterfaceAlias $interfaceAlias | Where-Object { $_.IPAddress -eq $staticIP -and $_.AddressFamily -eq 'IPv4' }
 
         if ($existingIPAddress) {
-            # If it exists, update the existing IP configuration
-            Set-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway
-            Write-Host "Updated existing IP address configuration to $staticIP."
-        } else {
-            # If it doesn't exist, create a new IP address configuration
-            New-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway -Type Unicast
-            Write-Host "Static IP address set to $staticIP."
+            # If it exists, remove the existing IP address
+            Remove-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP
+            Write-Host "Removed existing IP address $staticIP."
         }
 
-        # Display message after the static IP is set
-        Write-Host "Static IP address set to $staticIP. Configuring DNS...`n"
+        # Set static IP address for the server
+        New-NetIPAddress -InterfaceAlias $interfaceAlias -IPAddress $staticIP -PrefixLength 24 -DefaultGateway $defaultGateway -Type Unicast -AddressFamily IPv4
+        Write-Host "Static IP address set to $staticIP."
 
         # Import the DNS Server module
         Write-Host "Importing DNS Server Module"
@@ -312,31 +308,38 @@ function Server-Maintenance {
             Install-WindowsFeature -Name DNS -IncludeManagementTools
         }
 
-        # Set the DNS server to listen on all available IP addresses
-        Write-Host "Setting Network Adapter to listen for DNS Lookup on any address."
-        Set-DnsServerSetting -InterfaceAlias (Get-NetAdapter).Name -ListenAddresses "Any"
-
         # Set the DNS server address on the network adapter
         Write-Host "Setting DNS Server on the active network adapter (typically LAN)"
         $NIC = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
         Set-DnsClientServerAddress -InterfaceIndex $NIC.IfIndex -ServerAddresses $IPAddress
 
         # Configure DNS forwarders
+        Write-Host "Setting DNS Forwarding to $forwarders"
         Set-DnsServerForwarder -IPAddress $Forwarders
 
         # Get the current domain name
         $domain = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).Name
 
-        # Create a forward lookup zone
-        try {
-            Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns" -PassThru -ErrorAction Stop
-            Write-Host "Forward lookup zone created successfully."
-        } catch {
-            Write-Host "Failed to create forward lookup zone. Error: $_"
+        # Check if the DNS zone already exists
+        $zoneExists = Get-DnsServerZone -Name $domain -ErrorAction SilentlyContinue
+
+        if ($zoneExists) {
+            Write-Host "DNS zone for $domain already exists. Skipping creation."
+        } else {
+            # Create a forward lookup zone
+            Write-Host "Attempting to create forward lookup zone for $domain on LAN"
+            try {
+                Add-DnsServerPrimaryZone -Name $domain -ZoneFile "$domain.dns" -PassThru -ErrorAction Stop
+                Write-Host "Forward lookup zone created successfully."
+            } catch {
+                Write-Host "Failed to create forward lookup zone. Error: $_"
+            }
         }
 
 
+
         # Restart DNS service to apply changes
+        Write-Host "Restarting DNS Service"
         Restart-Service -Name DNS
 
         # Display message after DNS is configured
@@ -351,6 +354,107 @@ function Server-Maintenance {
     }
 }
 
+##################################
+
+function Create-Network-Folders {
+    # Prompt user for folder name
+    $folderName = Read-Host "Enter the name of the shared folder"
+
+    # Validate folder name
+    if (-not $folderName -or $folderName -notmatch '^[a-zA-Z0-9_\-]+$') {
+        Write-Host "Invalid folder name. Please use alphanumeric characters, underscores, or hyphens."
+        return
+    }
+
+    # Construct full paths
+    $folderPath = "C:\SharedFolders\$folderName"
+    $sharePath = "$folderPath\SharedData"
+
+    # Check if folder already exists
+    if (Test-Path $folderPath) {
+        Write-Host "The folder '$folderName' already exists. Aborting."
+        return
+    }
+
+    # Create the folder
+    New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
+
+    # Prompt user for OUs
+    $allowedOUs = @()
+    do {
+
+        Write-Host "Here is a list of current OUs:"
+        Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+        Write-Host "`n`n"
+
+        $ou = Read-Host "Enter an Organizational Unit (OU) that should have access to the folder (leave blank to finish)"
+        if (-not [string]::IsNullOrWhiteSpace($ou)) {
+            $allowedOUs += $ou
+        }
+    } while (-not [string]::IsNullOrWhiteSpace($ou))
+
+    # Share the folder and assign access based on OUs
+    try {
+        New-SmbShare -Name $folderName -Path $sharePath -FullAccess "Everyone" -Confirm:$false -ErrorAction Stop
+    
+        # Add access control based on OUs
+        foreach ($ou in $allowedOUs) {
+            $domainComponents = (Get-ADDomain).DistinguishedName -split ',' | ForEach-Object { $_ -replace 'DC=' }
+            $ouPath = "OU=$ou,$domainComponents"
+            $ouSecurityPrincipal = "NT AUTHORITY\Authenticated Users"
+            $ouPermission = "ReadAndExecute"
+    
+            # Grant access to the OU
+            $ouAccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $ouSecurityPrincipal,
+                $ouPermission,
+                "ContainerInherit,ObjectInherit",
+                "None",
+                "Allow"
+            )
+            $ouAcl = Get-Acl $folderPath
+            $ouAcl.AddAccessRule($ouAccessRule)
+            Set-Acl -Path $folderPath -AclObject $ouAcl
+        }
+    
+        Write-Host "Shared folder '$folderName' created and shared successfully with access control for selected OUs."
+    }
+    catch {
+        Write-Host "Error sharing folder: $_"
+        Remove-Item -Path $folderPath -Force -ErrorAction SilentlyContinue  # Rollback folder creation on error
+    }
+
+}
+
+##################################
+
+function ConfigureEmail {
+
+    # Install SMTP Server feature
+    Write-Host "Installing Windows Feature SMTP-Server"
+    Install-WindowsFeature -Name SMTP-Server -IncludeManagementTools
+
+    # Import the WebAdministration module
+    Write-Host "Importing Module WebAdministration"
+    Import-Module WebAdministration
+
+    # Set the SMTP server configuration
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpMaxMessagesPerConnection" -Value 20
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpMaxMessageSize" -Value 10485760  # 10 MB limit
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpMaxRecipientsPerMessage" -Value 100  
+
+    # Disable Anonymous Authentication and enable Windows Authentication
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpAnonymousAuthenticationEnabled" -Value $false
+    Set-ItemProperty -Path "IIS:\SmtpServer\Default SMTP Server" -Name "SmtpWindowsAuthenticationEnabled" -Value $true
+
+    # Restart the SMTP server to apply changes
+    Restart-Service -Name "SimpleMailTransferProtocol"
+
+    Write-Host "SMTP Server configured successfully."
+}
+
+##################################
+
 # Display the menu
 while ($true) {
     Clear-Host
@@ -360,6 +464,8 @@ while ($true) {
     Write-Host "3. Promote this server to a Domain Controller"
     Write-Host "4. Add AD Users or OUs to the Domain"
     Write-Host "5. Server Maintenance - Rename, Static IP, DNS"
+    Write-Host "6. Create Shared Network Folders"
+    Write-Host "7. Configure Intranet Email Server"
     Write-Host "Q. Quit"
 
     # Get user input
@@ -372,6 +478,8 @@ while ($true) {
         '3' { Create-Domain-Controller; break }
         '4' { Provision-ADUser; break }
         '5' { Server-Maintenance; break }
+        '6' { Create-Network-Folders; break }
+        '7' { ConfigureEmail; break }
         'Q' { exit }
         default { Write-Host "Invalid choice. Please try again." }
     }
