@@ -372,7 +372,7 @@ function Create-Network-Folders {
 
     # Check if folder already exists - THIS WORKS
     $folderPath = "C:\SharedFolders\$folderName"
-    $sharePath = "\\$env:COMPUTERNAME\SharedFolders\$folderName"
+    $sharePath = "C:\SharedFolders\$folderName"
     if (Test-Path $folderPath) {
         Write-Host "The folder '$folderName' already exists. Proceeding."
     }
@@ -428,8 +428,8 @@ function Create-Network-Folders {
             try {
 
                 ## COMMA AFTER $AUTHSG MUST ~~MUST~~ BE INSIDE THE QUOTES
-                Invoke-Expression "net share $folderName=$sharePath /GRANT:'$authSG',FULL"
-                Invoke-Expression "net share $folderName=$sharePath /GRANT:'Domain Admins',FULL"
+                net share $folderName=$sharePath /GRANT:$authSG,FULL
+                net share $folderName=$sharePath /GRANT:"Domain Admins",FULL
                 Write-Host "Shared folder '$folderName' shared successfully with $authSG and Domain Admins."
                 # not re-prompting on loop
                 # $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
