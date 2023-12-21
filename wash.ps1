@@ -444,16 +444,26 @@ function Create-Network-Folders {
     
         $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
 
+        elseif ($confirmAuth -eq 'n') {
+            $addAlt = Read-Host -prompt "Would you like to a different OU to access $folderName? (Y/N)"
+            if ($addAlt -eq 'y') {
+                return
+            }
+            elseif ($addAlt -eq 'n') {
+                break
+            }
+            else {
+                Write-Host "Invalid input"
+                return
+            }
+        }
+
+        else {
+            Write-Host "Invalid input"
+            return
+        }
+
     } while ($addAnother -eq 'Y')
-
-    elseif ($confirmAuth -eq 'n') {
-        break
-    }
-
-    else {
-        Write-Host "Invalid input"
-        return
-    }
 
 }
 
