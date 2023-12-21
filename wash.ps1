@@ -392,14 +392,14 @@ function Create-Network-Folders {
     $existOU = Get-ADOrganizationalUnit -Filter {Name -eq $authorizedOU}
     if ($existOU -eq $null){
         Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
-        return
+        break
     }
 
     else {
-        # show users in OU - THIS WORKS
+        # show users in OU
         Write-Host "`nYou will see a red Windows warning here if there are no AD-Users in your OU. No problem.`n"
-        $userList = Get-ADUser -Filter * -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" | Select-Object Name | Sort-Object Name | Formet-List
-        Write-Host "Here is a list of users in your selected OU:`n$userList"
+        Write-Host "Here is a list of users in your selected OU:"
+        Get-ADUser -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" -Filter * | Select-Object Name | Format-List
 
     }
     
@@ -428,9 +428,9 @@ function Create-Network-Folders {
             try {
 
                 ## COMMA AFTER $AUTHSG MUST ~~MUST~~ BE INSIDE THE QUOTES
-                net share $folderName=$sharePath /GRANT:"$authSG,"FULL
-                net share $folderName=$sharePath /GRANT:"Domain Admins,"FULL
-                Write-Host "Shared folder '$folderName' shared successfully with $authSG."
+                Invoke-Expression "net share $folderName=$sharePath /GRANT:'$authSG',FULL"
+                Invoke-Expression "net share $folderName=$sharePath /GRANT:'Domain Admins',FULL"
+                Write-Host "Shared folder '$folderName' shared successfully with $authSG and Domain Admins."
                 # not re-prompting on loop
                 # $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
             }   
