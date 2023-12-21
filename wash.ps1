@@ -381,48 +381,49 @@ function Create-Network-Folders {
         New-Item -Path $folderPath -ItemType Directory -ErrorAction Stop
     }
 
-    # Print list of OUs - THIS WORKS
-    Write-Host "`n`nHere's a list of OUs in this AD:"
-    Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
+    do{
+        # Print list of OUs - THIS WORKS
+        Write-Host "`n`nHere's a list of OUs in this AD:"
+        Get-ADOrganizationalUnit -Filter * | Select-Object Name | Format-List
 
-    # Prompt for OU Selection: - THIS WORKS
-    $authorizedOU = Read-Host "Enter one OU name to authorize access to the shared folder (at $folderName)"
+        # Prompt for OU Selection: - THIS WORKS
+        $authorizedOU = Read-Host "Enter one OU name to authorize access to the shared folder (at $folderName)"
 
-    # THIS WORKS
-    $existOU = Get-ADOrganizationalUnit -Filter {Name -eq $authorizedOU}
-    if ($existOU -eq $null){
-        Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
-        break
-    }
+        # THIS WORKS
+        $existOU = Get-ADOrganizationalUnit -Filter {Name -eq $authorizedOU}
+        if ($existOU -eq $null){
+            Write-Host "That OU doesn't exist. Option 4 in the Main Menu allows creation of OUs."
+            break
+        }
 
-    else {
-        # show users in OU
-        Write-Host "`nYou will see a red Windows warning here if there are no AD-Users in your OU. No problem.`n"
-        Write-Host "Here is a list of users in your selected OU:"
-        Get-ADUser -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" -Filter * | Select-Object Name | Format-List
+        else {
+            # show users in OU
+            Write-Host "`nYou will see a red Windows warning here if there are no AD-Users in your OU. No problem.`n"
+            Write-Host "Here is a list of users in your selected OU:"
+            Get-ADUser -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" -Filter * | Select-Object Name | Format-List
 
-    }
+        }
     
-    # confirm selection - THIS WORKS
-    $confirmAuth = Read-Host "Confirm you want $authorizedOU users to have access to $folderName (y/n)"
-    if ($confirmAuth -eq 'y') {
-        do {
+        # confirm selection - THIS WORKS
+        $confirmAuth = Read-Host "`nConfirm you want $authorizedOU users to have access to $folderName (y/n)`n"
+        if ($confirmAuth -eq 'y') {
+            
             $authSG = "SecGroup$authorizedOU"
 
             # check for existence of group
-                $existSG = Get-ADGroup -Filter {Name -eq $authSG}
-                if ($existSG -eq $null) {
-                    # if it doesn't exist
-                    New-ADGroup -Name "$authSG" -GroupScope Global -GroupCategory Security 
-                }
-                else{
-                    # if it does exist
-                    Write-Host "Good news, this OU has a Security Group already! Mirroring current OU users to respective SG."
-                }               
+            $existSG = Get-ADGroup -Filter {Name -eq $authSG}
+            if ($existSG -eq $null) {
+                # if it doesn't exist
+                New-ADGroup -Name "$authSG" -GroupScope Global -GroupCategory Security 
+            }
+            else{
+                # if it does exist
+                Write-Host "`nGood news, this OU has a Security Group already! Mirroring current OU users to respective SG.`n"
+            }               
 
             #copy the users and report
             Get-ADUser -SearchBase "OU=$authorizedOU,DC=$Dname,DC=com" -Filter * | ForEach-Object {Add-ADGroupMember -Identity "$authSG" -Members $_ }
-            Write-Host "Added users from $authorizedOU to $authSG."
+            Write-Host "`nAdded users from $authorizedOU to $authSG.`n"
 
             # Share the folder and assign access based on SGs
             try {
@@ -430,22 +431,20 @@ function Create-Network-Folders {
                 $netshare = $folderName
 
                 net share $netshare=$sharePath /GRANT:$authSG,FULL
-                
-                $netshare2 = $netshare_1
-                
-                net share $netshare2=$sharePath /GRANT:"Domain Admins",FULL
-                Write-Host "Shared folder '$folderName' shared successfully with $authSG and Domain Admins."
-                # not re-prompting on loop
-                # $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
+
+                Write-Host "`nShared folder '$folderName' shared successfully with $authSG`n"
             }   
 
             catch {
-                Write-Host "Error sharing folder: $_"
+                Write-Host "`n`n ***** Error sharing folder: $_"
                 break
             }
-        } while ($addAnother -eq "Y")
 
-    }
+        }
+    
+        $addAnother = Read-Host -prompt "Would you like to allow another OU to access $folderName? (Y/N)"
+
+    } while ($addAnother -eq 'Y')
 
     elseif ($confirmAuth -eq 'n') {
         break
