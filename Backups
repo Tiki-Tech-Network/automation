@@ -1,0 +1,52 @@
+param(
+    [string]$BackupFrequency = 'Daily' # Default to daily backups
+)
+
+# Define the source directories to back up
+$sourceDirs = @(
+    "C:\Users\Administrator\FINANCE",
+    "C:\Users\Administrator\HR",
+    "C:\Users\Administrator\IT",
+    "C:\Users\Administrator\Research"
+)
+
+# Define the root backup directory on the local disk (E drive)
+$backupRootDir = "E:\Backups"
+
+# Create a timestamped directory for this backup
+$timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+$backupDir = Join-Path $backupRootDir ("Backup_" + $timestamp)
+New-Item -Path $backupDir -ItemType Directory
+
+# Add logging functionality (now on E drive)
+$LogPath = "E:\BackupLogs"
+If(-Not (Test-Path $LogPath)){
+    New-Item -Path $LogPath -ItemType Directory
+}
+
+$LogFile = Join-Path -Path $LogPath -ChildPath ("BackupLog_" + $timestamp + ".txt")
+Start-Transcript -Path $LogFile
+
+# Copy each source directory to the timestamped backup directory
+foreach ($dir in $sourceDirs) {
+    if (Test-Path $dir) {
+        $folderName = Split-Path $dir -Leaf
+        $destPath = Join-Path $backupDir $folderName
+        Copy-Item -Path $dir -Destination $destPath -Recurse
+        Write-Output "Backed up $folderName to $destPath"
+    } else {
+        Write-Output "Source directory $dir does not exist."
+    }
+}
+
+# Determine if a full server backup is needed based on the BackupFrequency parameter
+if ($BackupFrequency -eq 'Monthly') {
+    # Placeholder for full server backup operation
+    # You would add commands here to perform a full server backup
+    Write-Output "Performing a full server backup"
+    # ...
+}
+
+Stop-Transcript
+
+Write-Output "Backup completed to $backupDir"
